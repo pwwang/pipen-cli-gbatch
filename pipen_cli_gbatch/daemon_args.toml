@@ -1,0 +1,197 @@
+[[mutually_exclusive_groups]]
+
+[[mutually_exclusive_groups.arguments]]
+flags = ["--nowait"]
+action = "store_true"
+default = false
+help = "Run the command in a detached mode without waiting for its completion."
+
+[[mutually_exclusive_groups.arguments]]
+flags = ["--view-logs"]
+choices = ["all", "stdout", "stderr"]
+help = "View the logs of a job."
+
+[[arguments]]
+flags = ["--name"]
+type = "str"
+help = """The name of the daemon pipeline.
+If not provided, try to generate one from the command to run.
+If the command is also not provided, use 'PipenCliGbatchDaemon' as the name."""
+
+[[arguments]]
+flags = ["--profile"]
+type = "str"
+help = """Use the `scheduler_opts` as the Scheduler Options of a given profile from pipen configuration files,
+including ~/.pipen.toml and ./pipen.toml.
+Note that if not provided, nothing will be loaded from the configuration files.
+"""
+
+[[arguments]]
+flags = ["--version"]
+action = "store_true"
+default = false
+help = "Show the version of the pipen-cli-gbatch package."
+
+[[arguments]]
+flags = ["--loglevel"]
+choices = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "debug", "info", "warning", "error", "critical"]
+default = "INFO"
+help = "Set the logging level for the daemon process."
+
+[[groups]]
+title = "Key Options"
+description = "The key options to run the command."
+
+[[groups.arguments]]
+flags = ["--workdir"]
+type = "str"
+help = """The workdir (a Google Storage Bucket path is required) to store the meta information of the daemon pipeline.
+If not provided, the one from the command will be used."""
+
+[[groups.arguments]]
+flags = ["command"]
+nargs = "..."
+help = "The command passed after `--` to run, with all its arguments. Note that the command should be provided after `--`."
+
+[[groups]]
+title = "Scheduler Options"
+description = "The options to configure the gbatch scheduler."
+
+
+[[groups.arguments]]
+flags = ["--error-strategy"]
+choices = ["retry", "halt"]
+default = "halt"
+help = "The strategy when there is error happened"
+
+[[groups.arguments]]
+flags = ["--num-retries"]
+type = "int"
+default = 0
+help = "The number of retries when there is error happened. Only valid when --error-strategy is 'retry'."
+
+[[groups.arguments]]
+flags = ["--prescript"]
+type = "str"
+help = "The prescript to run before the main command."
+
+[[groups.arguments]]
+flags = ["--postscript"]
+type = "str"
+help = "The postscript to run after the main command."
+
+[[groups.arguments]]
+flags = ["--jobname-prefix"]
+type = "str"
+help = """The prefix of the name prefix of the daemon job.
+If not provided, try to generate one from the command to run.
+If the command is also not provided, use 'pipen-gbatch-daemon' as the prefix."""
+
+[[groups.arguments]]
+flags = ["--recheck-interval"]
+type = "int"
+default = 600
+help = "The interval to recheck the job status, each takes about 0.1 seconds."
+
+[[groups.arguments]]
+flags = ["--cwd"]
+type = "str"
+help = "The working directory to run the command. If not provided, the current directory is used. You can pass either a mounted path (inside the VM) or a Google Storage Bucket path (gs://...). If a Google Storage Bucket path is provided, the mounted path will be inferred from the mounted paths of the VM."
+
+[[groups.arguments]]
+flags = ["--project"]
+type = "str"
+# required = true
+help = "The Google Cloud project to run the job."
+
+[[groups.arguments]]
+flags = ["--location"]
+type = "str"
+# required = true
+help = "The location to run the job."
+
+[[groups.arguments]]
+flags = ["--mount"]
+type = "list"
+default = []
+action = "clear_extend"
+help = """The list of mounts to mount to the VM, each in the format of SOURCE:TARGET, where SOURCE must be either a Google Storage Bucket path (gs://...)."""
+
+[[groups.arguments]]
+flags = ["--service-account"]
+type = "str"
+help = "The service account to run the job."
+
+[[groups.arguments]]
+flags = ["--network"]
+type = "str"
+help = "The network to run the job."
+
+[[groups.arguments]]
+flags = ["--subnetwork"]
+type = "str"
+help = "The subnetwork to run the job."
+
+[[groups.arguments]]
+flags = ["--no-external-ip-address"]
+action = "store_true"
+help = "Whether to disable external IP address for the VM."
+
+[[groups.arguments]]
+flags = ["--machine-type"]
+type = "str"
+help = "The machine type of the VM."
+
+[[groups.arguments]]
+flags = ["--provisioning-model"]
+choices = ["STANDARD", "SPOT"]
+help = "The provisioning model of the VM."
+
+[[groups.arguments]]
+flags = ["--image-uri"]
+type = "str"
+help = "The custom image URI of the VM."
+
+[[groups.arguments]]
+flags = ["--entrypoint"]
+type = "str"
+help = "The entry point of the container to run the command."
+
+[[groups.arguments]]
+flags = ["--commands"]
+type = "list"
+default = []
+action = "clear_extend"
+help = "The list of commands to run in the container, each as a separate string."
+
+[[groups.arguments]]
+flags = ["--runnables"]
+type = "json"
+help = """The JSON string of extra settings of runnables add to the job.json.
+Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#Runnable for details.
+You can have an extra key 'order' for each runnable, where negative values mean to run before the main command,
+and positive values mean to run after the main command."""
+
+[[groups.arguments]]
+flags = ["--allocationPolicy"]
+type = "json"
+default = "{}"
+help = "The JSON string of extra settings of allocationPolicy add to the job.json. Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#AllocationPolicy for details."
+
+[[groups.arguments]]
+flags = ["--taskGroups"]
+type = "json"
+default = "[]"
+help = "The JSON string of extra settings of taskGroups add to the job.json. Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#TaskGroup for details."
+
+[[groups.arguments]]
+flags = ["--labels"]
+type = "json"
+default = "{}"
+help = "The JSON string of labels to add to the job. Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#Job.FIELDS.labels for details."
+
+[[groups.arguments]]
+flags = ["--gcloud"]
+type = "str"
+default = "gcloud"
+help = "The path to the gcloud command."

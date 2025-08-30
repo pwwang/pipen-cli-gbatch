@@ -1,0 +1,23 @@
+[project]
+name = "pipen-cli-gbatch"
+version = "0.0.0"
+description = "A pipen cli plugin to run command via Google Cloud Batch"
+authors = [
+    {name = "pwwang",email = "pwwang@pwwang.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = "^3.9"
+dependencies = [
+    "pipen (>=0.17.17,<0.18.0)",
+    "pipen-poplog (>=0.3.6,<0.4.0)",
+    "google-cloud-storage (>=3.0.0,<4.0.0)"
+]
+
+
+[tool.poetry.plugins.pipen_cli]
+cli-gbatch = "pipen_cli_gbatch:CliGbatchPlugin"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
