@@ -248,8 +248,8 @@ files = [
 google-auth = ">=2.14.1,<3.0.0"
 googleapis-common-protos = ">=1.56.2,<2.0.0"
 proto-plus = [
-    {version = ">=1.22.3,<2.0.0"},
     {version = ">=1.25.0,<2.0.0", markers = "python_version >= \"3.13\""},
+    {version = ">=1.22.3,<2.0.0", markers = "python_version < \"3.13\""},
 ]
 protobuf = ">=3.19.5,<3.20.0 || >3.20.0,<3.20.1 || >3.20.1,<4.21.0 || >4.21.0,<4.21.1 || >4.21.1,<4.21.2 || >4.21.2,<4.21.3 || >4.21.3,<4.21.4 || >4.21.4,<4.21.5 || >4.21.5,<7.0.0"
 requests = ">=2.18.0,<3.0.0"
@@ -822,9 +822,9 @@ files = [
 
 [package.dependencies]
 numpy = [
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -1015,14 +1015,14 @@ six = ">=1.5"
 
 [[package]]
 name = "python-simpleconf"
-version = "0.7.1"
+version = "0.7.2"
 description = "Simple configuration management with python."
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "python_simpleconf-0.7.1-py3-none-any.whl", hash = "sha256:7f6df2b742c58e37fceb33cc93068bff664b3aa625c02d3aa5b03203ad239c23"},
-    {file = "python_simpleconf-0.7.1.tar.gz", hash = "sha256:706ecdc6c9c92d868c21c6fcd41f5d34e6837e6db513ba1652b24112e43750b9"},
+    {file = "python_simpleconf-0.7.2-py3-none-any.whl", hash = "sha256:7d0ce8febd1e0826084ad32c96ffa531c1ec40e7632b2abb67c02c41157bd4ab"},
+    {file = "python_simpleconf-0.7.2.tar.gz", hash = "sha256:03b01c6235f5f288f00ba590564b6bda56c0c1baba71fcf4612caa7c9e63de6f"},
 ]
 
 [package.dependencies]
@@ -1032,6 +1032,7 @@ tomli = {version = ">=2.0,<3.0", optional = true, markers = "sys_platform != \"l
 
 [package.extras]
 all = ["iniconfig (>=2.0,<3.0)", "python-dotenv (>=1.1,<2.0)", "pyyaml (>=6,<7)", "rtoml (>=0.12,<0.13) ; sys_platform == \"linux\"", "tomli (>=2.0,<3.0) ; sys_platform != \"linux\""]
+cloud = ["yunpath (>=0.0.4,<0.0.5)"]
 env = ["python-dotenv (>=1.1,<2.0)"]
 ini = ["iniconfig (>=2.0,<3.0)"]
 toml = ["rtoml (>=0.12,<0.13) ; sys_platform == \"linux\"", "tomli (>=2.0,<3.0) ; sys_platform != \"linux\""]
@@ -1417,5 +1418,5 @@ cloudpathlib = ">=0.21,<0.22"
 
 [metadata]
 lock-version = "2.1"
-python-versions = "^3.9"
-content-hash = "120cce29c9841317cfc283b2185fef97133b4ca92667fe08a1b6ea0fee1a76e5"
+python-versions = ">=3.9,<4.0"
+content-hash = "2bf804d6e18f7f027edaf4ca728b9733f8c8f23e422af5de6fa4270c9c794479"
