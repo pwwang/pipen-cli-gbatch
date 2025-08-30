@@ -65,24 +65,6 @@ pipen gbatch --view-logs -- \
 pipen gbatch --view-logs --workdir gs://my-bucket/workdir
 ```
 
-### Cancel or Check Status
-
-We also have shortcuts to cancel or check the status of the running job:
-
-```bash
-pipen gbatch --cancel -- \
-    python myscript.py --input input.txt --output output.txt
-
-# or just provide the workdir
-pipen gbatch --cancel --workdir gs://my-bucket/workdir
-
-pipen gbatch --status -- \
-    python myscript.py --input input.txt --output output.txt
-
-# or just provide the workdir
-pipen gbatch --status --workdir gs://my-bucket/workdir
-```
-
 ## Configuration
 
 Because the daemon pipeline is running on Google Cloud Batch, a Google Storage Bucket path is required for the workdir. For example: `gs://my-bucket/workdir`
