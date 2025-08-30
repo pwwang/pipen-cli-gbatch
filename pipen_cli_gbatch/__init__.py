@@ -392,7 +392,7 @@ class CliGbatchDaemon:
 
 
 class CliGbatchPlugin(CLIPlugin):
-    """The CLI plugin to run `pipen gbatch` command."""
+    """Simplify running commands via Google Cloud Batch."""
 
     __version__ = __version__
     name = "gbatch"
@@ -417,6 +417,29 @@ class CliGbatchPlugin(CLIPlugin):
 
     def __init__(self, parser, subparser):
         super().__init__(parser, subparser)
+        subparser.epilog = """\033[1;4mExamples\033[0m:
+
+  \u200B
+  # Run a command and wait for it to complete
+  > pipen gbatch --workdir gs://my-bucket/workdir -- \\
+    python myscript.py --input input.txt --output output.txt
+
+  \u200B
+  # Run a command in a detached mode
+  > pipen gbatch --nowait --project $PROJECT --location $LOCATION \\
+    --workdir gs://my-bucket/workdir -- \\
+    python myscript.py --input input.txt --output output.txt
+
+  \u200B
+  # If you have a profile defined in ~/.pipen.toml or ./.pipen.toml
+  > pipen gbatch --profile myprofile -- \\
+    python myscript.py --input input.txt --output output.txt
+
+  \u200B
+  # View the logs of a previously run command
+  > pipen gbatch --view-logs all --name my-daemon-name \\
+    --workdir gs://my-bucket/workdir
+        """
         argfile = Path(__file__).parent / "daemon_args.toml"
         args_def = Config.load(argfile, loader="toml")
         mutually_exclusive_groups = args_def.get("mutually_exclusive_groups", [])
