@@ -71,22 +71,11 @@ Because the daemon pipeline is running on Google Cloud Batch, a Google Storage B
 
 A unique job ID will be generated per the name (`--name`) and workdir, so that if the same command is run again with the same name and workdir, it will not start a new job, but just attach to the existing job and pull the logs.
 
-If `--name` is not provided in the command line or `pipen-cli-gbatch.name` is not provided from the configuration file, it will try to grab the name (`--name`) from the command line arguments after `--`, or else use "name" from the root section of the configuration file, with a "CliGbatchDaemon" suffix. If nothing can be found, a default name "PipenCliGbatchDaemon" will be used.
+If `--name` is not provided in the command line, it will try to grab the name (`--name`) from the command line arguments after `--`, or else use "name" from the root section of the configuration file, with a "GbatchDaemon" suffix. If nothing can be found, a default name "PipenGbatchDaemon" will be used.
 
 Then a workdir `{workdir}/<daemon pipeline name>/` will be created to store the meta information.
 
-One can have some default configuration file for the daemon pipeline in either/both the user home directory `~/.pipen-cli-gbatch.toml` or the current working directory `./.pipen-cli-gbatch.toml`. The configurations in these files will be overridden by the command line arguments.
-
-Example `config.toml`:
-
-```toml
-[pipen-cli-gbatch]
-workdir = "gs://my-bucket/workdir"
-name = "MyDaemon"
-
-[DEFAULT]
-# Other pipen configurations
-```
+With `--profile` provided, the scheduler options (`scheduler_opts`) defined in `~/.pipen.toml` and `./.pipen.toml` will be used as default.
 
 ## API
 
