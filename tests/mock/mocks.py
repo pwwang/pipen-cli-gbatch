@@ -163,9 +163,12 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
         link_path = f"{MOCK_MOUNTS_DIR}{self.workdir.mounted}"
         self.workdir = SpecPath(source_path, mounted=link_path)
         # make symbolic link for workdir
-        Path(link_path).parent.mkdir(parents=True, exist_ok=True)
-        if not Path(link_path).exists():
-            Path(link_path).symlink_to(source_path)
+        link_path = Path(link_path)
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        if not link_path.exists():
+            if link_path.is_symlink():
+                link_path.unlink()
+            link_path.symlink_to(source_path)
 
         volumes.insert(
             0,
