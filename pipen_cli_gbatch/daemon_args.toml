@@ -11,6 +11,12 @@ flags = ["--view-logs"]
 choices = ["all", "stdout", "stderr"]
 help = "View the logs of a job."
 
+[[mutually_exclusive_groups.arguments]]
+flags = ["--version"]
+action = "store_true"
+default = false
+help = "Show the version of the pipen-cli-gbatch package."
+
 [[arguments]]
 flags = ["--name"]
 type = "str"
@@ -37,12 +43,6 @@ flags = ["--plain"]
 action = "store_true"
 default = false
 help = "Treat the command as a plain command, not a pipen pipeline, so we don't grab workdir/outdir and replace them with mounted paths from the command."
-
-[[arguments]]
-flags = ["--version"]
-action = "store_true"
-default = false
-help = "Show the version of the pipen-cli-gbatch package."
 
 [[groups]]
 title = "Key Options"
