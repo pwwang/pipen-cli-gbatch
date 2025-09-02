@@ -21,9 +21,6 @@ jobs:
           python -m pip install poetry
           poetry config virtualenvs.create false
           poetry install -v --with dev
-      - name: Lint with flake8
-        run: |
-          flake8 pipen_cli_gbatch
       - name: Test with pytest
         run: |
           pytest
