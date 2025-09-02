@@ -27,16 +27,22 @@ Note that if not provided, nothing will be loaded from the configuration files.
 """
 
 [[arguments]]
-flags = ["--version"]
-action = "store_true"
-default = false
-help = "Show the version of the pipen-cli-gbatch package."
-
-[[arguments]]
 flags = ["--loglevel"]
 choices = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "debug", "info", "warning", "error", "critical"]
 default = "INFO"
 help = "Set the logging level for the daemon process."
+
+[[arguments]]
+flags = ["--plain"]
+action = "store_true"
+default = false
+help = "Treat the command as a plain command, not a pipen pipeline, so we don't grab workdir/outdir and replace them with mounted paths from the command."
+
+[[arguments]]
+flags = ["--version"]
+action = "store_true"
+default = false
+help = "Show the version of the pipen-cli-gbatch package."
 
 [[groups]]
 title = "Key Options"
@@ -112,10 +118,15 @@ help = "The location to run the job."
 
 [[groups.arguments]]
 flags = ["--mount"]
-type = "list"
+# type = "list"
 default = []
-action = "clear_extend"
-help = """The list of mounts to mount to the VM, each in the format of SOURCE:TARGET, where SOURCE must be either a Google Storage Bucket path (gs://...)."""
+action = "clear_append"
+help = """The list of mounts to mount to the VM, each in the format of SOURCE:TARGET, where SOURCE must be either a Google Storage Bucket path (gs://...).
+You can also use named mounts like `INDIR=gs://my-bucket/inputs` and the directory will be mounted to `/mnt/disks/INDIR` in the VM;
+then you can use environment variable `$INDIR` in the command/script to refer to the mounted path.
+You can also mount a file like `INFILE=gs://my-bucket/inputs/file.txt`. The parent directory will be mounted to `/mnt/disks/INFILE/inputs` in the VM,
+and the file will be available at `/mnt/disks/INFILE/inputs/file.txt` in the VM. `$INFILE` can also be used in the command/script to refer to the mounted path.
+"""
 
 [[groups.arguments]]
 flags = ["--service-account"]
@@ -159,9 +170,9 @@ help = "The entry point of the container to run the command."
 
 [[groups.arguments]]
 flags = ["--commands"]
-type = "list"
+# type = "list"
 default = []
-action = "clear_extend"
+action = "clear_append"
 help = "The list of commands to run in the container, each as a separate string."
 
 [[groups.arguments]]

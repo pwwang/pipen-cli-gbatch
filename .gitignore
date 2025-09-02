@@ -124,3 +124,6 @@ docs/api/
 *.sif
 # git bundle files
 *.bundle
+
+tests/mock/jobs
+tests/mock/mounts

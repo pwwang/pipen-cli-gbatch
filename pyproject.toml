@@ -9,14 +9,30 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.9,<4.0"
 dependencies = [
-    "pipen (>=0.17.17,<0.18.0)",
+    "pipen (>=0.17.19,<0.18.0)",
     "pipen-poplog (>=0.3.6,<0.4.0)",
     "google-cloud-storage (>=3.0.0,<4.0.0)"
 ]
 
+[tool.pytest.ini_options]
+addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
+console_output_style = "progress"
+junit_family = "xunit1"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+   "ignore:.+may lead to deadlocks in the child:DeprecationWarning",
+]
 
 [tool.poetry.plugins.pipen_cli]
 cli-gbatch = "pipen_cli_gbatch:CliGbatchPlugin"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.1"
+pytest-cov = "^6.2.1"
+pytest-asyncio = "^1.1.0"
+pytest-xdist = "^3.8.0"
+pytest-forked = "^1.6.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

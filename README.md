@@ -187,6 +187,11 @@ Examples:
   # Run a command and wait for it to complete
   > pipen gbatch --workdir gs://my-bucket/workdir -- \
     python myscript.py --input input.txt --output output.txt
+
+  # Use named mounts
+  > pipen gbatch --workdir gs://my-bucket/workdir --mount INFILE=gs://bucket/path/to/file \
+    --mount OUTDIR=gs://bucket/path/to/outdir -- \
+    cat $INFILE > $OUTDIR/output.txt
   ​
   # Run a command in a detached mode
   > pipen gbatch --nowait --project $PROJECT --location $LOCATION \

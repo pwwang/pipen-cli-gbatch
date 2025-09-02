@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""
+Mock gcloud command for testing pipen-cli-gbatch locally.
+This mock simulates Google Batch job submission and management while running jobs
+locally.
+Updated to match MockJob behavior for path handling and symbolic links.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+# import tempfile
+import time
+from pathlib import Path
+
+# Global variables for mock state
+MOCK_DIR = Path(__file__).parent
+JOBS_DIR = MOCK_DIR / "jobs"
+JOBS_DIR.mkdir(exist_ok=True)
+
+
+def handle_batch_jobs_submit(args):
+    """Handle 'gcloud batch jobs submit' command"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("job_name")
+    parser.add_argument("--config")
+    parser.add_argument("--location", default="us-central1")
+    parser.add_argument("--project")
+
+    parsed_args, unknown = parser.parse_known_args(args[3:])  # Skip 'batch jobs submit'
+
+    job_id = parsed_args.job_name
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(exist_ok=True)
+
+    # Read and process the config file
+    config = {}
+    if parsed_args.config:
+        try:
+            with open(parsed_args.config, "r") as f:
+                config = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            # Return error to stderr like real gcloud would
+            error_msg = f"Error reading config file {parsed_args.config}: {e}"
+            print(error_msg, file=sys.stderr)
+            sys.exit(1)
+
+    # Process the job config to handle mounts and create local execution script
+    process_job_config(config, job_dir, job_id)
+
+    # Start the job in background and return success (like real gcloud)
+    start_job(job_dir, job_id)
+
+    # Real gcloud just prints success message and exits
+    print(f"Job [{job_id}] submitted.")
+
+
+def process_job_config(config, job_dir, job_id):
+    """Process job config to handle mounts and create execution script"""
+    execution_script = ["#!/bin/bash", "set -e", ""]
+
+    task_spec = config.get("taskGroups", [{}])[0].get("taskSpec", {})
+
+    # Add the actual command
+    if "runnables" in task_spec:
+        for runnable in task_spec["runnables"]:
+            if "script" in runnable:
+                script_content = runnable["script"]["text"]
+                execution_script.append(script_content)
+            elif "container" in runnable:
+                # Handle container commands (convert to local execution)
+                container = runnable["container"]
+                cmd = (
+                    container.get("entrypoint", "")
+                    + " "
+                    + " ".join(container.get("commands", []))
+                )
+                execution_script.append(cmd.strip())
+
+    # Write execution script to job.wrapped.gbatch (framework convention)
+    script_path = job_dir / "job.runnable"
+    with open(script_path, "w") as f:
+        f.write("\n".join(execution_script))
+
+    os.chmod(script_path, 0o755)
+
+
+def start_job(job_dir, job_id):
+    """Start the job in background with proper detachment"""
+    script_path = job_dir / "job.runnable"
+    # Start the job in background with detached process group
+    pid = subprocess.Popen(
+        ["/bin/bash", str(script_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=job_dir,
+        preexec_fn=os.setsid,  # Detach from parent process group
+    )
+
+    # Write PID to job.pid file
+    job_dir.joinpath("job.pid").write_text(str(pid.pid))
+
+
+def handle_batch_jobs_describe(args):
+    """Handle 'gcloud batch jobs describe' command"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("job_name")
+    parser.add_argument("--location", default="us-central1")
+    parser.add_argument("--project")
+    parser.add_argument("--format", default="yaml")
+
+    parsed_args, unknown = parser.parse_known_args(
+        args[3:]
+    )  # Skip 'batch jobs describe'
+
+    # Find job by name (could be partial match)
+    job_dir = JOBS_DIR / parsed_args.job_name
+
+    if not job_dir.is_dir():
+        print("state: UNKNOWN")
+        return
+
+    # Find job by name (could be partial match)
+    job_dir = JOBS_DIR / parsed_args.job_name
+
+    if not job_dir.is_dir():
+        print("state: UNKNOWN")
+        return
+
+    pid_file = job_dir / "job.pid"
+
+    # check if a process with that PID is running
+    try:
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, 0)  # Check if process exists
+        state = "RUNNING"
+    except (ValueError, ProcessLookupError):
+        state = "UNKNOWN"
+
+    print(f"state: {state}")
+
+
+def handle_batch_jobs_delete(args):
+    """Handle 'gcloud batch jobs delete' command"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("job_name")
+    parser.add_argument("--location", default="us-central1")
+    parser.add_argument("--project")
+    parser.add_argument("--quiet", "-q", action="store_true")
+
+    parsed_args, unknown = parser.parse_known_args(args[3:])  # Skip 'batch jobs delete'
+
+    # Find and kill job
+    job_dir = JOBS_DIR / parsed_args.job_name
+    pid = (
+        (JOBS_DIR / parsed_args.job_name / "job.pid").read_text().strip()
+        if job_dir.is_dir()
+        else None
+    )
+    try:
+        pid = int(pid) if pid else None
+    except ValueError:
+        pid = None
+
+    try:
+        if pid:
+            os.kill(pid, 15)  # SIGTERM
+            time.sleep(1)
+            os.kill(pid, 9)  # SIGKILL if still running
+    except OSError:
+        pass  # Process already dead
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: gcloud <command> [args...]", file=sys.stderr)
+        sys.exit(1)
+
+    command = sys.argv[1:]
+
+    if len(command) >= 3 and command[:3] == ["batch", "jobs", "submit"]:
+        handle_batch_jobs_submit(command)
+    elif len(command) >= 3 and command[:3] == ["batch", "jobs", "describe"]:
+        handle_batch_jobs_describe(command)
+    elif len(command) >= 3 and command[:3] == ["batch", "jobs", "delete"]:
+        handle_batch_jobs_delete(command)
+    else:
+        print(f"Mock gcloud: Unsupported command: {' '.join(command)}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

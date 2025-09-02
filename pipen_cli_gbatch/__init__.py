@@ -63,8 +63,10 @@ from __future__ import annotations
 
 import sys
 import asyncio
+from contextlib import suppress
 from pathlib import Path
 from time import sleep
+from typing import Any
 from diot import Diot
 from argx import Namespace
 from yunpath import AnyPath, GSPath
@@ -81,71 +83,54 @@ __version__ = "0.0.0"
 __all__ = ("CliGbatchPlugin", "CliGbatchDaemon")
 
 
-class XquteCliGbatchPlugin:
-    """The plugin used to pull logs for the real pipeline."""
-
-    def __init__(self, name: str = "logging", log_start: bool = True):
-        self.name = name
-        self.log_start = log_start
-        self.stdout_populator = LogsPopulator()
-        self.stderr_populator = LogsPopulator()
-
-    @plugin.impl
-    async def on_job_started(self, scheduler, job):
-        if not self.log_start:
-            return
-
-        self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
-        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
-        logger.info("Job is picked up by Google Batch, pulling stdout/stderr...")
-
-    @plugin.impl
-    async def on_job_polling(self, scheduler, job, counter):
-        if counter % 5 != 0:
-            # Make it less frequent
-            return
-
-        stdout_lines = self.stdout_populator.populate()
-        self.stdout_populator.increment_counter(len(stdout_lines))
-        for line in stdout_lines:
-            logger.info(f"/STDOUT {line}")
-
-        stderr_lines = self.stderr_populator.populate()
-        self.stderr_populator.increment_counter(len(stderr_lines))
-        for line in stderr_lines:
-            logger.error(f"/STDERR {line}")
-
-    @plugin.impl
-    async def on_job_killed(self, scheduler, job):
-        await self.on_job_polling.impl(self, scheduler, job, 0)
-
-    @plugin.impl
-    async def on_job_failed(self, scheduler, job):
-        await self.on_job_polling.impl(self, scheduler, job, 0)
-
-    @plugin.impl
-    async def on_job_succeeded(self, scheduler, job):
-        await self.on_job_polling.impl(self, scheduler, job, 0)
-
-    @plugin.impl
-    def on_shutdown(self, xqute, sig):
-        del self.stdout_populator
-        self.stdout_populator = None
-        del self.stderr_populator
-        self.stderr_populator = None
-
-
 class CliGbatchDaemon:
+    """A daemon pipeline wrapper for running commands via Google Cloud Batch.
+
+    This class wraps arbitrary commands as single-process pipen pipelines and executes
+    them using the Google Cloud Batch scheduler. It handles configuration management,
+    path mounting, and provides both synchronous and asynchronous execution modes.
+
+    Attributes:
+        config (Diot): Configuration dictionary containing all daemon settings.
+        command (list[str]): The command to be executed as a list of arguments.
+
+    Example:
+        >>> daemon = CliGbatchDaemon(
+        ...     {"workdir": "gs://my-bucket/workdir", "project": "my-project"},
+        ...     ["python", "script.py", "--input", "data.txt"]
+        ... )
+        >>> await daemon.run()
+    """
 
     def __init__(self, config: dict | Namespace, command: list[str]):
+        """Initialize the CliGbatchDaemon.
+
+        Args:
+            config: Configuration dictionary or Namespace containing daemon settings.
+                Must include 'workdir' pointing to a Google Storage bucket path.
+            command: List of command arguments to execute.
+        """
         if isinstance(config, Namespace):
             self.config = Diot(vars(config))
         else:
             self.config = Diot(config)
+
+        self.config.prescript = self.config.get("prescript", None) or ""
+        self.config.postscript = self.config.get("postscript", None) or ""
         self.command = command
 
     def _get_arg_from_command(self, arg: str) -> str | None:
-        """Get the value of the given argument from the command line."""
+        """Get the value of the given argument from the command line.
+
+        Args:
+            arg: The argument name to search for (without '--' prefix).
+
+        Returns:
+            The value of the argument if found, None otherwise.
+
+        Raises:
+            FileNotFoundError: If a config file is specified but doesn't exist.
+        """
         cmd_equal = [cmd.startswith(f"--{arg}=") for cmd in self.command]
         cmd_space = [cmd == f"--{arg}" for cmd in self.command]
         cmd_at = [cmd.startswith("@") for cmd in self.command]
@@ -163,56 +148,131 @@ class CliGbatchDaemon:
                 raise FileNotFoundError(f"Config file not found: {config_file}")
 
             conf = Config.load_one(config_file)
-            value = conf.get("workdir", None)
+            value = conf.get(arg, None)
         else:
             value = None
 
         return value
 
-    def _check_workdir(self):
-        workdir = self.config.get("workdir", self._get_arg_from_command("workdir"))
+    def _replace_arg_in_command(self, arg: str, value: Any) -> None:
+        """Replace the value of the given argument in the command line.
+
+        Args:
+            arg: The argument name to replace (without '--' prefix).
+            value: The new value to set for the argument.
+        """
+        cmd_equal = [cmd.startswith(f"--{arg}=") for cmd in self.command]
+        cmd_space = [cmd == f"--{arg}" for cmd in self.command]
+        value = str(value)
+
+        if any(cmd_equal):
+            index = cmd_equal.index(True)
+            self.command[index] = f"--{arg}={value}"
+        elif any(cmd_space) and len(cmd_space) > cmd_space.index(True) + 1:
+            index = cmd_space.index(True)
+            self.command[index + 1] = value
+        else:
+            self.command.extend([f"--{arg}", value])
+
+    def _add_mount(self, source: str | GSPath, target: str) -> None:
+        """Add a mount point to the configuration.
+
+        Args:
+            source: The source path (local or GCS path).
+            target: The target mount path inside the container.
+        """
+        mount = self.config.get("mount", [])
+        # mount the workdir
+        mount.append(f'{source}:{target}')
+
+        self.config["mount"] = mount
+
+    def _handle_workdir(self):
+        """Handle workdir configuration and mounting.
+
+        Validates that workdir is a Google Storage bucket path and sets up
+        the appropriate mount configuration for the container.
+
+        Raises:
+            SystemExit: If workdir is not a valid Google Storage bucket path.
+        """
+        command_workdir = self._get_arg_from_command("workdir")
+        workdir = self.config.get("workdir", command_workdir)
 
         if not workdir or not isinstance(AnyPath(workdir), GSPath):
             print(
-                "\033[1;4mError\033[0m: A Google Storage Bucket path is required for "
-                "--workdir.\n"
+                "\033[1;4mError\033[0m: An existing Google Storage Bucket path is "
+                "required for --workdir.\n"
             )
             sys.exit(1)
 
         self.config["workdir"] = workdir
+        # If command workdir is different from config workdir, we need to mount it
+        self._add_mount(workdir, GbatchScheduler.MOUNTED_METADIR)
+
+        # replace --workdir value with the mounted workdir in the command
+        self._replace_arg_in_command("workdir", GbatchScheduler.MOUNTED_METADIR)
+
+    def _handle_outdir(self):
+        """Handle output directory configuration and mounting.
+
+        If an output directory is specified in the command, mounts it to the
+        container and updates the command to use the mounted path.
+        """
+        command_outdir = self._get_arg_from_command("outdir")
+
+        if command_outdir:
+            self._add_mount(command_outdir, GbatchScheduler.MOUNTED_OUTDIR)
+            self._replace_arg_in_command("outdir", GbatchScheduler.MOUNTED_OUTDIR)
 
     def _infer_name(self):
+        """Infer the daemon name from configuration or command arguments.
+
+        Priority order:
+        1. config.name
+        2. --name from command + "GbatchDaemon" suffix
+        3. Default "PipenCliGbatchDaemon"
+        """
         name = self.config.get("name", None)
         if not name:
             command_name = self._get_arg_from_command("name")
             if not command_name:
                 name = "PipenCliGbatchDaemon"
             else:
-                name = f"{name}GbatchDaemon"
+                name = f"{command_name}GbatchDaemon"
 
         self.config["name"] = name
 
     def _infer_jobname_prefix(self):
+        """Infer the job name prefix for the Google Cloud Batch scheduler.
+
+        Priority order:
+        1. config.jobname_prefix
+        2. --name from command + "-gbatch-daemon" suffix (lowercase)
+        3. Default "pipen-cli-gbatch-daemon"
+        """
         prefix = self.config.get("jobname_prefix", None)
         if not prefix:
             command_name = self._get_arg_from_command("name")
             if not command_name:
-                prefix = "pipen-gbatch-daemon"
+                prefix = "pipen-cli-gbatch-daemon"
             else:
                 prefix = f"{command_name.lower()}-gbatch-daemon"
 
         self.config["jobname_prefix"] = prefix
 
-    def _setup_mount(self):
-        mount = self.config.get("mount", [])
-        # mount the workdir
-        mount.append(f'{self.config["workdir"]}:{GbatchScheduler.MOUNTED_METADIR}')
-
-        self.config["mount"] = mount
-
     def _get_xqute(self) -> Xqute:
+        """Create and configure an Xqute instance for job execution.
+
+        Returns:
+            Configured Xqute instance with appropriate plugins and scheduler options.
+        """
         plugins = ["-xqute.pipen"]
-        if not self.config.nowait and not self.config.view_logs:
+        if (
+            not self.config.nowait
+            and not self.config.view_logs
+            and "logging" not in plugin.get_all_plugin_names()
+        ):
             plugins.append(XquteCliGbatchPlugin())
 
         return Xqute(
@@ -238,6 +298,7 @@ class CliGbatchDaemon:
                     "version",
                     "loglevel",
                     "mounts",
+                    "plain",
                 )
             },
             workdir=(f'{self.config.workdir}/{self.config["name"]}'),
@@ -245,10 +306,12 @@ class CliGbatchDaemon:
         )
 
     def _run_version(self):
+        """Print version information for pipen-cli-gbatch and pipen."""
         print(f"pipen-cli-gbatch version: v{__version__}")
         print(f"pipen version: v{pipen_version}")
 
     def _show_scheduler_opts(self):
+        """Log the scheduler options for debugging purposes."""
         logger.debug("Scheduler Options:")
         for key, val in self.config.items():
             if key in (
@@ -265,12 +328,18 @@ class CliGbatchDaemon:
                 "version",
                 "loglevel",
                 "mounts",
+                "plain",
             ):
                 continue
 
             logger.debug(f"- {key}: {val}")
 
-    async def _run_wait(self):
+    async def _run_wait(self):  # pragma: no cover
+        """Run the pipeline and wait for completion.
+
+        Raises:
+            SystemExit: If no command is provided.
+        """
         if not self.command:
             print("\033[1;4mError\033[0m: No command to run is provided.\n")
             sys.exit(1)
@@ -281,6 +350,14 @@ class CliGbatchDaemon:
         await xqute.run_until_complete()
 
     async def _run_nowait(self):
+        """Run the pipeline without waiting for completion.
+
+        Submits the job to Google Cloud Batch and prints information about
+        how to monitor the job status and retrieve logs.
+
+        Raises:
+            SystemExit: If no command is provided.
+        """
         """Run the pipeline without waiting for completion."""
         if not self.command:
             print("\033[1;4mError\033[0m: No command to run is provided.\n")
@@ -332,10 +409,18 @@ class CliGbatchDaemon:
             logger.info(f'📁 {self.config["workdir"]}/{self.config["name"]}/0/')
             logger.info("")
         finally:
-            if xqute.plugin_context:
+            if xqute.plugin_context:  # pragma: no cover
                 xqute.plugin_context.__exit__()
 
-    def _run_view_logs(self):
+    def _run_view_logs(self):  # pragma: no cover
+        """Pull and display logs from the Google Cloud Batch job.
+
+        Continuously monitors and displays stdout/stderr logs based on the
+        view_logs configuration. Supports viewing 'stdout', 'stderr', or 'all'.
+
+        Raises:
+            SystemExit: If workdir is not found or when interrupted by user.
+        """
         log_source = {}
         workdir = AnyPath(self.config["workdir"]) / self.config["name"] / "0"
         if not workdir.exists():
@@ -353,30 +438,73 @@ class CliGbatchDaemon:
         poplulators = {
             key: LogsPopulator(logfile=val) for key, val in log_source.items()
         }
+
         logger.info(f"Pulling logs from: {', '.join(log_source.keys())}")
-        logger.info("Press Ctrl-C (twice) to stop.")
+        logger.info("Press Ctrl-C (twice if needed) to stop.")
         print("")
-        while True:
+
+        try:
+            while True:
+                for key, populator in poplulators.items():
+                    lines = populator.populate()
+                    for line in lines:
+                        if len(log_source) > 1:
+                            print(f"/{key} {line}")
+                        else:
+                            print(line)
+                sleep(5)
+        except KeyboardInterrupt:
             for key, populator in poplulators.items():
-                lines = populator.populate()
-                for line in lines:
+                if populator.residue:
                     if len(log_source) > 1:
-                        print(f"/{key} {line}")
+                        print(f"/{key} {populator.residue}")
                     else:
-                        print(line)
-            sleep(5)
+                        print(populator.residue)
+            print("")
+            logger.info("Stopped pulling logs.")
+            sys.exit(0)
 
     def setup(self):
+        """Set up logging and configuration for the daemon.
+
+        Configures logging handlers and filters, validates workdir requirements,
+        and initializes daemon name and job name prefix.
+
+        Raises:
+            SystemExit: If workdir is not a valid Google Storage bucket path.
+        """
         logger.addHandler(RichHandler(show_path=False, show_time=False))
         logger.addFilter(DuplicateFilter())
         logger.setLevel(self.config.loglevel.upper())
 
-        self._check_workdir()
-        self._infer_name()
-        self._infer_jobname_prefix()
-        self._setup_mount()
+        if not self.config.plain:
+            self._handle_workdir()
+            self._handle_outdir()
+            self._infer_name()
+            self._infer_jobname_prefix()
+        else:
+            if not self.config.workdir or not isinstance(
+                AnyPath(self.config.workdir),
+                GSPath,
+            ):
+                print(
+                    "\033[1;4mError\033[0m: An existing Google Storage Bucket path is "
+                    "required for --workdir.\n"
+                )
+                sys.exit(1)
 
-    async def run(self):
+            if 'name' not in self.config:
+                self.config["name"] = "PipenCliGbatchDaemon"
+
+    async def run(self):  # pragma: no cover
+        """Execute the daemon pipeline based on configuration.
+
+        Determines the execution mode based on configuration flags:
+        - version: Print version information
+        - nowait: Run in detached mode
+        - view_logs: Display logs from existing job
+        - default: Run and wait for completion
+        """
         if self.config.version:
             self._run_version()
             return
@@ -391,8 +519,139 @@ class CliGbatchDaemon:
             await self._run_wait()
 
 
-class CliGbatchPlugin(CLIPlugin):
-    """Simplify running commands via Google Cloud Batch."""
+class XquteCliGbatchPlugin:  # pragma: no cover
+    """Plugin for pulling logs during pipeline execution.
+
+    This plugin monitors job execution and continuously pulls stdout/stderr logs
+    from the Google Cloud Batch job, displaying them in real-time during execution.
+
+    Attributes:
+        name (str): The plugin name.
+        log_start (bool): Whether to start logging when job starts.
+        stdout_populator (LogsPopulator): Handles stdout log population.
+        stderr_populator (LogsPopulator): Handles stderr log population.
+    """
+
+    def __init__(self, name: str = "logging", log_start: bool = True):
+        """Initialize the logging plugin.
+
+        Args:
+            name: The plugin name.
+            log_start: Whether to start logging when job starts.
+        """
+        self.name = name
+        self.log_start = log_start
+        self.stdout_populator = LogsPopulator()
+        self.stderr_populator = LogsPopulator()
+
+    def _clear_residues(self):
+        """Clear any remaining log residues and display them."""
+        if self.stdout_populator.residue:
+            logger.info(f"/STDOUT {self.stdout_populator.residue}")
+            self.stdout_populator.residue = ""
+        if self.stderr_populator.residue:
+            logger.error(f"/STDERR {self.stderr_populator.residue}")
+            self.stderr_populator.residue = ""
+
+    @plugin.impl
+    async def on_job_started(self, scheduler, job):
+        """Handle job start event by setting up log file paths.
+
+        Args:
+            scheduler: The scheduler instance.
+            job: The job that started.
+        """
+        if not self.log_start:
+            return
+
+        self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
+        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
+        logger.info("Job is picked up by Google Batch, pulling stdout/stderr...")
+
+    @plugin.impl
+    async def on_job_polling(self, scheduler, job, counter):
+        """Handle job polling event by pulling and displaying logs.
+
+        Args:
+            scheduler: The scheduler instance.
+            job: The job being polled.
+            counter: The polling counter.
+        """
+        if counter % 5 != 0:
+            # Make it less frequent
+            return
+
+        stdout_lines = self.stdout_populator.populate()
+        self.stdout_populator.increment_counter(len(stdout_lines))
+        for line in stdout_lines:
+            logger.info(f"/STDOUT {line}")
+
+        stderr_lines = self.stderr_populator.populate()
+        self.stderr_populator.increment_counter(len(stderr_lines))
+        for line in stderr_lines:
+            logger.error(f"/STDERR {line}")
+
+    @plugin.impl
+    async def on_job_killed(self, scheduler, job):
+        """Handle job killed event by pulling final logs.
+
+        Args:
+            scheduler: The scheduler instance.
+            job: The job that was killed.
+        """
+        await self.on_job_polling(scheduler, job, 0)
+        self._clear_residues()
+
+    @plugin.impl
+    async def on_job_failed(self, scheduler, job):
+        """Handle job failed event by pulling final logs.
+
+        Args:
+            scheduler: The scheduler instance.
+            job: The job that failed.
+        """
+        with suppress(AttributeError, FileNotFoundError):
+            # in case the job failed before started
+            await self.on_job_polling(scheduler, job, 0)
+        self._clear_residues()
+
+    @plugin.impl
+    async def on_job_succeeded(self, scheduler, job):
+        """Handle job succeeded event by pulling final logs.
+
+        Args:
+            scheduler: The scheduler instance.
+            job: The job that succeeded.
+        """
+        with suppress(AttributeError, FileNotFoundError):
+            await self.on_job_polling(scheduler, job, 0)
+        self._clear_residues()
+
+    @plugin.impl
+    def on_shutdown(self, xqute, sig):
+        """Handle shutdown event by cleaning up resources.
+
+        Args:
+            xqute: The Xqute instance.
+            sig: The shutdown signal.
+        """
+        del self.stdout_populator
+        self.stdout_populator = None
+        del self.stderr_populator
+        self.stderr_populator = None
+
+
+class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
+    """Simplify running commands via Google Cloud Batch.
+
+    This CLI plugin provides a command-line interface for executing arbitrary
+    commands on Google Cloud Batch through the pipen framework. It wraps
+    commands as single-process pipelines and provides various execution modes.
+
+    Attributes:
+        __version__ (str): The version of the plugin.
+        name (str): The CLI command name.
+    """
 
     __version__ = __version__
     name = "gbatch"
@@ -402,6 +661,15 @@ class CliGbatchPlugin(CLIPlugin):
         config_files: list[str],
         profile: str | None,
     ) -> dict:
+        """Get the default configurations from the given config files and profile.
+
+        Args:
+            config_files: List of configuration file paths to load.
+            profile: The profile name to use for configuration.
+
+        Returns:
+            Dictionary containing scheduler options from the configuration.
+        """
         """Get the default configurations from the given config files and profile."""
         if not profile:
             return {}
@@ -416,6 +684,12 @@ class CliGbatchPlugin(CLIPlugin):
         return conf.get("scheduler_opts", {})
 
     def __init__(self, parser, subparser):
+        """Initialize the CLI plugin with argument parsing configuration.
+
+        Args:
+            parser: The main argument parser.
+            subparser: The subparser for this specific command.
+        """
         super().__init__(parser, subparser)
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
@@ -423,6 +697,12 @@ class CliGbatchPlugin(CLIPlugin):
   # Run a command and wait for it to complete
   > pipen gbatch --workdir gs://my-bucket/workdir -- \\
     python myscript.py --input input.txt --output output.txt
+
+  \u200B
+  # Use named mounts
+  > pipen gbatch --workdir gs://my-bucket/workdir --mount INFILE=gs://bucket/path/to/file \\
+    --mount OUTDIR=gs://bucket/path/to/outdir -- \\
+    bash -c 'cat $INFILE > $OUTDIR/output.txt'
 
   \u200B
   # Run a command in a detached mode
@@ -439,7 +719,7 @@ class CliGbatchPlugin(CLIPlugin):
   # View the logs of a previously run command
   > pipen gbatch --view-logs all --name my-daemon-name \\
     --workdir gs://my-bucket/workdir
-        """
+        """  # noqa: E501
         argfile = Path(__file__).parent / "daemon_args.toml"
         args_def = Config.load(argfile, loader="toml")
         mutually_exclusive_groups = args_def.get("mutually_exclusive_groups", [])
@@ -448,7 +728,18 @@ class CliGbatchPlugin(CLIPlugin):
         subparser._add_decedents(mutually_exclusive_groups, groups, [], arguments, [])
 
     def parse_args(self, known_parsed, unparsed_argv: list[str]) -> Namespace:
-        """Define arguments for the command"""
+        """Parse command-line arguments and apply configuration defaults.
+
+        Args:
+            known_parsed: Previously parsed arguments.
+            unparsed_argv: List of unparsed command-line arguments.
+
+        Returns:
+            Namespace containing parsed arguments with applied defaults.
+
+        Raises:
+            SystemExit: If command arguments are not properly formatted.
+        """
         # Check if there is any unknown args
         known_parsed = super().parse_args(known_parsed, unparsed_argv)
         if known_parsed.command:
@@ -476,5 +767,9 @@ class CliGbatchPlugin(CLIPlugin):
         return known_parsed
 
     def exec_command(self, args: Namespace) -> None:
-        """Execute the command"""
+        """Execute the gbatch command with the provided arguments.
+
+        Args:
+            args: Parsed command-line arguments containing configuration and command.
+        """
         asyncio.run(CliGbatchDaemon(args, args.command).run())
