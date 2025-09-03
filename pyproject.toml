@@ -1,18 +1,18 @@
-[project]
+[tool.poetry]
 name = "pipen-cli-gbatch"
 version = "0.0.2"
 description = "A pipen cli plugin to run command via Google Cloud Batch"
-authors = [
-    {name = "pwwang",email = "pwwang@pwwang.com"}
-]
-license = {text = "MIT"}
+authors = ["pwwang <pwwang@pwwang.com>"]
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.9,<4.0"
-dependencies = [
-    "pipen (>=0.17.19,<0.18.0)",
-    "pipen-poplog (>=0.3.6,<0.4.0)",
-    "google-cloud-storage (>=3.0.0,<4.0.0)"
-]
+homepage = "https://github.com/pwwang/pipen-cli-gbatch"
+repository = "https://github.com/pwwang/pipen-cli-gbatch"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pipen = "^0.17.19"
+pipen-poplog = "^0.3.6"
+google-cloud-storage = "^3.0.0"
 
 [tool.pytest.ini_options]
 addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
