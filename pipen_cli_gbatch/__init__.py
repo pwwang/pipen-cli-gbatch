@@ -559,6 +559,17 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             self.stderr_populator.residue = ""
 
     @plugin.impl
+    async def on_job_init(self, scheduler, job):
+        """Handle job initialization event.
+
+        Args:
+            scheduler: The scheduler instance.
+            job: The job being initialized.
+        """
+        self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
+        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
+
+    @plugin.impl
     async def on_job_started(self, scheduler, job):
         """Handle job start event by setting up log file paths.
 
@@ -569,8 +580,6 @@ class XquteCliGbatchPlugin:  # pragma: no cover
         if not self.log_start:
             return
 
-        self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
-        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
         logger.info("Job is picked up by Google Batch, pulling stdout/stderr...")
 
     @plugin.impl
