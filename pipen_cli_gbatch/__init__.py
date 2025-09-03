@@ -117,6 +117,11 @@ class CliGbatchDaemon:
 
         self.config.prescript = self.config.get("prescript", None) or ""
         self.config.postscript = self.config.get("postscript", None) or ""
+        if "labels" in self.config and isinstance(self.config.labels, list):
+            self.config.labels = {
+                key: val
+                for key, val in (item.split("=", 1) for item in self.config.labels)
+            }
         self.command = command
 
     def _get_arg_from_command(self, arg: str) -> str | None:
@@ -183,7 +188,7 @@ class CliGbatchDaemon:
         """
         mount = self.config.get("mount", [])
         # mount the workdir
-        mount.append(f'{source}:{target}')
+        mount.append(f"{source}:{target}")
 
         self.config["mount"] = mount
 
@@ -493,7 +498,7 @@ class CliGbatchDaemon:
                 )
                 sys.exit(1)
 
-            if 'name' not in self.config:
+            if "name" not in self.config:
                 self.config["name"] = "PipenCliGbatchDaemon"
 
     async def run(self):  # pragma: no cover
@@ -693,29 +698,29 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
         super().__init__(parser, subparser)
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
-  \u200B
+  \u200b
   # Run a command and wait for it to complete
   > pipen gbatch --workdir gs://my-bucket/workdir -- \\
     python myscript.py --input input.txt --output output.txt
 
-  \u200B
+  \u200b
   # Use named mounts
   > pipen gbatch --workdir gs://my-bucket/workdir --mount INFILE=gs://bucket/path/to/file \\
     --mount OUTDIR=gs://bucket/path/to/outdir -- \\
     bash -c 'cat $INFILE > $OUTDIR/output.txt'
 
-  \u200B
+  \u200b
   # Run a command in a detached mode
   > pipen gbatch --nowait --project $PROJECT --location $LOCATION \\
     --workdir gs://my-bucket/workdir -- \\
     python myscript.py --input input.txt --output output.txt
 
-  \u200B
+  \u200b
   # If you have a profile defined in ~/.pipen.toml or ./.pipen.toml
   > pipen gbatch --profile myprofile -- \\
     python myscript.py --input input.txt --output output.txt
 
-  \u200B
+  \u200b
   # View the logs of a previously run command
   > pipen gbatch --view-logs all --name my-daemon-name \\
     --workdir gs://my-bucket/workdir

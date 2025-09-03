@@ -186,20 +186,21 @@ and positive values mean to run after the main command."""
 [[groups.arguments]]
 flags = ["--allocationPolicy"]
 type = "json"
-default = "{}"
+default = {}
 help = "The JSON string of extra settings of allocationPolicy add to the job.json. Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#AllocationPolicy for details."
 
 [[groups.arguments]]
 flags = ["--taskGroups"]
 type = "json"
-default = "[]"
+default = []
 help = "The JSON string of extra settings of taskGroups add to the job.json. Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#TaskGroup for details."
 
 [[groups.arguments]]
 flags = ["--labels"]
-type = "json"
-default = "{}"
-help = "The JSON string of labels to add to the job. Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#Job.FIELDS.labels for details."
+# type = "json"
+default = []
+action = "clear_append"
+help = "The strings of labels to add to the job (key=value). Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#Job.FIELDS.labels for details."
 
 [[groups.arguments]]
 flags = ["--gcloud"]

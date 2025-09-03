@@ -27,6 +27,11 @@ def test_init():
     assert daemon.config.key == "val"
     assert daemon.command == ["cmd", "arg1"]
 
+    daemon = CliGbatchDaemon({"key": "val", "labels": ["a=1", "b=2"]}, ["cmd", "arg1"])
+    assert daemon is not None
+    assert daemon.config.labels == {"a": "1", "b": "2"}
+    assert daemon.command == ["cmd", "arg1"]
+
 
 def test_get_arg_from_command(tmp_path):
     daemon = CliGbatchDaemon({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
