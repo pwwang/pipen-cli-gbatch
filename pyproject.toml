@@ -8,6 +8,9 @@ readme = "README.md"
 homepage = "https://github.com/pwwang/pipen-cli-gbatch"
 repository = "https://github.com/pwwang/pipen-cli-gbatch"
 
+[tool.poetry.build]
+generate-setup-file = true
+
 [tool.poetry.dependencies]
 python = "^3.9"
 pipen = "^0.17.19"
