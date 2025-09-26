@@ -780,6 +780,20 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
         # update parsed with the defaults
         for key, val in defaults.items():
             if (
+                key == "mount"
+                and val
+                and getattr(known_parsed, key, None)
+            ):
+                if not isinstance(val, (tuple, list)):
+                    val = [val]
+                val = list(val)
+
+                kp_mount = getattr(known_parsed, key)
+                val.extend(kp_mount)
+                setattr(known_parsed, key, val)
+                continue
+
+            if (
                 key == "command"
                 or val is None
                 or is_valid(getattr(known_parsed, key, None))

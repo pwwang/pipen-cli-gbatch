@@ -120,7 +120,7 @@ help = "The location to run the job."
 flags = ["--mount"]
 # type = "list"
 default = []
-action = "clear_append"
+action = "append"
 help = """The list of mounts to mount to the VM, each in the format of SOURCE:TARGET, where SOURCE must be either a Google Storage Bucket path (gs://...).
 You can also use named mounts like `INDIR=gs://my-bucket/inputs` and the directory will be mounted to `/mnt/disks/INDIR` in the VM;
 then you can use environment variable `$INDIR` in the command/script to refer to the mounted path.
