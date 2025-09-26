@@ -767,12 +767,22 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
             CONFIG_FILES,
             known_parsed.profile,
         )
+
+        def is_valid(val: Any) -> bool:
+            """Check if a value is valid (not None, not empty string, not empty list).
+            """
+            if val is None:
+                return False
+            if isinstance(val, bool):
+                return True
+            return bool(val)
+
         # update parsed with the defaults
         for key, val in defaults.items():
             if (
                 key == "command"
                 or val is None
-                or getattr(known_parsed, key, None) is not None
+                or is_valid(getattr(known_parsed, key, None))
             ):
                 continue
 
