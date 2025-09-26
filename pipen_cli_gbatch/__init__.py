@@ -317,7 +317,7 @@ class CliGbatchDaemon:
 
     def _show_scheduler_opts(self):
         """Log the scheduler options for debugging purposes."""
-        logger.debug("Scheduler Options:")
+        logger.info("Scheduler Options:")
         for key, val in self.config.items():
             if key in (
                 "workdir",
@@ -337,7 +337,7 @@ class CliGbatchDaemon:
             ):
                 continue
 
-            logger.debug(f"- {key}: {val}")
+            logger.info(f"- {key}: {val}")
 
     async def _run_wait(self):  # pragma: no cover
         """Run the pipeline and wait for completion.
