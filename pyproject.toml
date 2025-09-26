@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pipen-cli-gbatch"
-version = "0.0.3"
+version = "0.0.4"
 description = "A pipen cli plugin to run command via Google Cloud Batch"
 authors = ["pwwang <pwwang@pwwang.com>"]
 license = "MIT"
