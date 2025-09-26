@@ -498,7 +498,7 @@ class CliGbatchDaemon:
                 )
                 sys.exit(1)
 
-            if "name" not in self.config:
+            if "name" not in self.config or not self.config.name:
                 self.config["name"] = "PipenCliGbatchDaemon"
 
     async def run(self):  # pragma: no cover
