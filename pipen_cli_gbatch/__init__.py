@@ -802,6 +802,22 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
 
             setattr(known_parsed, key, val)
 
+        mount_as_cwd = getattr(known_parsed, "mount_as_cwd", None)
+        cwd = getattr(known_parsed, "cwd", None)
+        delattr(known_parsed, "mount_as_cwd")
+        if mount_as_cwd and cwd:
+            print(
+                "\033[1;4mError\033[0m: --mount-as-cwd and --cwd "
+                "cannot be used together.\n"
+            )
+            sys.exit(1)
+
+        mount = getattr(known_parsed, "mount", None) or []
+        if mount_as_cwd:
+            mount.append(f"{mount_as_cwd}:/mnt/disks/.cwd")
+            setattr(known_parsed, "mount", mount)
+            setattr(known_parsed, "cwd", "/mnt/disks/.cwd")
+
         return known_parsed
 
     def exec_command(self, args: Namespace) -> None:

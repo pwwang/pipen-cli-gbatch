@@ -129,6 +129,14 @@ and the file will be available at `/mnt/disks/INFILE/inputs/file.txt` in the VM.
 """
 
 [[groups.arguments]]
+flags = ["--mount-as-cwd"]
+type = "str"
+help = """The directory to mount as the current working directory of the command.
+This is a shortcut for `--mount <cloudpath>:/mnt/disks/.cwd --cwd /mnt/disks/.cwd`.
+The <cloudpath> must be a Google Storage Bucket path (gs://...).
+"""
+
+[[groups.arguments]]
 flags = ["--service-account"]
 type = "str"
 help = "The service account to run the job."
