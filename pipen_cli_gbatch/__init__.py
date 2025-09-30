@@ -551,10 +551,10 @@ class XquteCliGbatchPlugin:  # pragma: no cover
 
     def _clear_residues(self):
         """Clear any remaining log residues and display them."""
-        if self.stdout_populator.residue:
+        if self.stdout_populator and self.stdout_populator.residue:
             logger.info(f"/STDOUT {self.stdout_populator.residue}")
             self.stdout_populator.residue = ""
-        if self.stderr_populator.residue:
+        if self.stderr_populator and self.stderr_populator.residue:
             logger.error(f"/STDERR {self.stderr_populator.residue}")
             self.stderr_populator.residue = ""
 
@@ -595,15 +595,17 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             # Make it less frequent
             return
 
-        stdout_lines = self.stdout_populator.populate()
-        self.stdout_populator.increment_counter(len(stdout_lines))
-        for line in stdout_lines:
-            logger.info(f"/STDOUT {line}")
+        if self.stderr_populator:
+            stdout_lines = self.stdout_populator.populate()
+            self.stdout_populator.increment_counter(len(stdout_lines))
+            for line in stdout_lines:
+                logger.info(f"/STDOUT {line}")
 
-        stderr_lines = self.stderr_populator.populate()
-        self.stderr_populator.increment_counter(len(stderr_lines))
-        for line in stderr_lines:
-            logger.error(f"/STDERR {line}")
+        if self.stderr_populator:
+            stderr_lines = self.stderr_populator.populate()
+            self.stderr_populator.increment_counter(len(stderr_lines))
+            for line in stderr_lines:
+                logger.error(f"/STDERR {line}")
 
     @plugin.impl
     async def on_job_killed(self, scheduler, job):
