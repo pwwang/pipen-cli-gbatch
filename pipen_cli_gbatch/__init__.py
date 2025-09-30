@@ -81,6 +81,7 @@ from pipen_poplog import LogsPopulator
 
 __version__ = "0.0.5"
 __all__ = ("CliGbatchPlugin", "CliGbatchDaemon")
+MOUNTED_CWD = "/mnt/disks/.cwd"
 
 
 class CliGbatchDaemon:
@@ -114,6 +115,17 @@ class CliGbatchDaemon:
             self.config = Diot(vars(config))
         else:
             self.config = Diot(config)
+
+        self.mount_as_cwd = self.config.pop("mount_as_cwd", None)
+        if self.mount_as_cwd:
+            if self.config.cwd:
+                print(
+                    "\033[1;4mError\033[0m: --mount-as-cwd cannot be used with "
+                    "--cwd at the same time.\n"
+                )
+                sys.exit(1)
+            self.config.cwd = MOUNTED_CWD
+            self._add_mount(self.mount_as_cwd, MOUNTED_CWD)
 
         self.config.prescript = self.config.get("prescript", None) or ""
         self.config.postscript = self.config.get("postscript", None) or ""
@@ -201,6 +213,11 @@ class CliGbatchDaemon:
         Raises:
             SystemExit: If workdir is not a valid Google Storage bucket path.
         """
+        command_name = self._get_arg_from_command("name") or self.config.name
+        from_mount_as_cwd = self.mount_as_cwd and not self.config.workdir
+        if from_mount_as_cwd:
+            self.config.workdir = f"{self.mount_as_cwd}/.pipen/{command_name}"
+
         command_workdir = self._get_arg_from_command("workdir")
         workdir = self.config.get("workdir", None) or command_workdir
 
@@ -212,11 +229,14 @@ class CliGbatchDaemon:
             sys.exit(1)
 
         self.config["workdir"] = workdir
-        # If command workdir is different from config workdir, we need to mount it
-        self._add_mount(workdir, GbatchScheduler.MOUNTED_METADIR)
+        if from_mount_as_cwd:  # already mounted
+            self._replace_arg_in_command("workdir", f"{MOUNTED_CWD}/.pipen")
+        else:
+            # If command workdir is different from config workdir, we need to mount it
+            self._add_mount(workdir, GbatchScheduler.MOUNTED_METADIR)
 
-        # replace --workdir value with the mounted workdir in the command
-        self._replace_arg_in_command("workdir", GbatchScheduler.MOUNTED_METADIR)
+            # replace --workdir value with the mounted workdir in the command
+            self._replace_arg_in_command("workdir", GbatchScheduler.MOUNTED_METADIR)
 
     def _handle_outdir(self):
         """Handle output directory configuration and mounting.
@@ -229,6 +249,12 @@ class CliGbatchDaemon:
         if command_outdir:
             self._add_mount(command_outdir, GbatchScheduler.MOUNTED_OUTDIR)
             self._replace_arg_in_command("outdir", GbatchScheduler.MOUNTED_OUTDIR)
+        elif self.mount_as_cwd:
+            command_name = self._get_arg_from_command("name") or self.config.name
+            self._replace_arg_in_command(
+                "outdir",
+                f"{MOUNTED_CWD}/{command_name}-output",
+            )
 
     def _infer_name(self):
         """Infer the daemon name from configuration or command arguments.
@@ -303,6 +329,7 @@ class CliGbatchDaemon:
                     "version",
                     "loglevel",
                     "mounts",
+                    "mount_as_cwd",
                     "plain",
                 )
             },
@@ -333,6 +360,7 @@ class CliGbatchDaemon:
                 "version",
                 "loglevel",
                 "mounts",
+                "mount_as_cwd",
                 "plain",
             ):
                 continue
@@ -483,9 +511,9 @@ class CliGbatchDaemon:
         logger.setLevel(self.config.loglevel.upper())
 
         if not self.config.plain:
+            self._infer_name()
             self._handle_workdir()
             self._handle_outdir()
-            self._infer_name()
             self._infer_jobname_prefix()
         else:
             if not self.config.workdir or not isinstance(
@@ -803,22 +831,6 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
                 continue
 
             setattr(known_parsed, key, val)
-
-        mount_as_cwd = getattr(known_parsed, "mount_as_cwd", None)
-        cwd = getattr(known_parsed, "cwd", None)
-        delattr(known_parsed, "mount_as_cwd")
-        if mount_as_cwd and cwd:
-            print(
-                "\033[1;4mError\033[0m: --mount-as-cwd and --cwd "
-                "cannot be used together.\n"
-            )
-            sys.exit(1)
-
-        mount = getattr(known_parsed, "mount", None) or []
-        if mount_as_cwd:
-            mount.append(f"{mount_as_cwd}:/mnt/disks/.cwd")
-            setattr(known_parsed, "mount", mount)
-            setattr(known_parsed, "cwd", "/mnt/disks/.cwd")
 
         return known_parsed
 
