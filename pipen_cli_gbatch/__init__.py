@@ -213,7 +213,7 @@ class CliGbatchDaemon:
         Raises:
             SystemExit: If workdir is not a valid Google Storage bucket path.
         """
-        command_name = self._get_arg_from_command("name") or self.config.name
+        command_name = self._get_arg_from_command("name") or self.config["name"]
         from_mount_as_cwd = self.mount_as_cwd and not self.config.workdir
         if from_mount_as_cwd:
             self.config.workdir = f"{self.mount_as_cwd}/.pipen/{command_name}"

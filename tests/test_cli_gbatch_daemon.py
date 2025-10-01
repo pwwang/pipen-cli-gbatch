@@ -83,6 +83,7 @@ def test_add_mount():
 def test_handle_workdir(tmp_path):
     # no workdir
     daemon = CliGbatchDaemon({}, ["cmd"])
+    daemon._infer_name()
     with pytest.raises(SystemExit):
         daemon._handle_workdir()
 
@@ -91,6 +92,7 @@ def test_handle_workdir(tmp_path):
         patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
         patch("pipen_cli_gbatch.isinstance", mock_isinstance),
     ):
+        daemon._infer_name()
         daemon._handle_workdir()
     assert daemon.config.workdir == "gs://bucket/path/workdir"
     assert (
