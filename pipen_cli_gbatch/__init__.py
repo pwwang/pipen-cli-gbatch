@@ -524,6 +524,12 @@ class CliGbatchDaemon:
             self._handle_outdir()
             self._infer_jobname_prefix()
         else:
+            if "name" not in self.config or not self.config.name:
+                self.config["name"] = "PipenCliGbatchDaemon"
+
+            if not self.config.workdir and self.mount_as_cwd:
+                self.config.workdir = f"{self.mount_as_cwd}/.pipen"
+
             if not self.config.workdir or not isinstance(
                 AnyPath(self.config.workdir),
                 GSPath,
@@ -534,8 +540,6 @@ class CliGbatchDaemon:
                 )
                 sys.exit(1)
 
-            if "name" not in self.config or not self.config.name:
-                self.config["name"] = "PipenCliGbatchDaemon"
 
     async def run(self):  # pragma: no cover
         """Execute the daemon pipeline based on configuration.
