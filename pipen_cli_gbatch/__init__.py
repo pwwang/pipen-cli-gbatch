@@ -247,8 +247,16 @@ class CliGbatchDaemon:
         command_outdir = self._get_arg_from_command("outdir")
 
         if command_outdir:
-            self._add_mount(command_outdir, GbatchScheduler.MOUNTED_OUTDIR)
-            self._replace_arg_in_command("outdir", GbatchScheduler.MOUNTED_OUTDIR)
+            coudir = AnyPath(command_outdir)
+            if (
+                not isinstance(coudir, GSPath)
+                and not coudir.is_absolute()
+                and self.mount_as_cwd
+            ):
+                self._replace_arg_in_command("outdir", f"{MOUNTED_CWD}/{coudir}")
+            else:
+                self._add_mount(command_outdir, GbatchScheduler.MOUNTED_OUTDIR)
+                self._replace_arg_in_command("outdir", GbatchScheduler.MOUNTED_OUTDIR)
         elif self.mount_as_cwd:
             command_name = self._get_arg_from_command("name") or self.config.name
             self._replace_arg_in_command(
