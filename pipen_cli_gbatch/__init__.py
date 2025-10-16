@@ -135,6 +135,7 @@ class CliGbatchDaemon:
                 for key, val in (item.split("=", 1) for item in self.config.labels)
             }
         self.command = command
+        self._command_workdir = None
 
     def _get_arg_from_command(self, arg: str) -> str | None:
         """Get the value of the given argument from the command line.
@@ -218,8 +219,10 @@ class CliGbatchDaemon:
         if from_mount_as_cwd:
             self.config.workdir = f"{self.mount_as_cwd}/.pipen/{command_name}"
 
-        command_workdir = self._get_arg_from_command("workdir")
-        workdir = self.config.get("workdir", None) or command_workdir
+        # self._command_workdir to save the original command workdir
+        self._command_workdir = workdir = (
+            self.config.get("workdir", None) or self._get_arg_from_command("workdir")
+        )
 
         if not workdir or not isinstance(AnyPath(workdir), GSPath):
             print(
@@ -312,7 +315,13 @@ class CliGbatchDaemon:
             and not self.config.view_logs
             and "logging" not in plugin.get_all_plugin_names()
         ):
-            plugins.append(XquteCliGbatchPlugin())
+            if self.config.plain:
+                # use the stdout file from daemon
+                stdout_file = None
+            else:
+                stdout_file = AnyPath(f"{self._command_workdir}/run-latest.log")
+
+            plugins.append(XquteCliGbatchPlugin(stdout_file=stdout_file))
 
         return Xqute(
             "gbatch",
@@ -540,7 +549,6 @@ class CliGbatchDaemon:
                 )
                 sys.exit(1)
 
-
     async def run(self):  # pragma: no cover
         """Execute the daemon pipeline based on configuration.
 
@@ -572,12 +580,15 @@ class XquteCliGbatchPlugin:  # pragma: no cover
 
     Attributes:
         name (str): The plugin name.
-        log_start (bool): Whether to start logging when job starts.
         stdout_populator (LogsPopulator): Handles stdout log population.
         stderr_populator (LogsPopulator): Handles stderr log population.
     """
 
-    def __init__(self, name: str = "logging", log_start: bool = True):
+    def __init__(
+        self,
+        name: str = "logging",
+        stdout_file: str | Path | GSPath | None = None,
+    ):
         """Initialize the logging plugin.
 
         Args:
@@ -585,7 +596,7 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             log_start: Whether to start logging when job starts.
         """
         self.name = name
-        self.log_start = log_start
+        self.stdout_file = stdout_file
         self.stdout_populator = LogsPopulator()
         self.stderr_populator = LogsPopulator()
 
@@ -599,17 +610,6 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             self.stderr_populator.residue = ""
 
     @plugin.impl
-    async def on_job_init(self, scheduler, job):
-        """Handle job initialization event.
-
-        Args:
-            scheduler: The scheduler instance.
-            job: The job being initialized.
-        """
-        self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
-        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
-
-    @plugin.impl
     async def on_job_started(self, scheduler, job):
         """Handle job start event by setting up log file paths.
 
@@ -617,10 +617,25 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             scheduler: The scheduler instance.
             job: The job that started.
         """
-        if not self.log_start:
-            return
-
         logger.info("Job is picked up by Google Batch, pulling stdout/stderr...")
+        if not self.stdout_file:
+            self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
+        elif not self.stdout_file.exists():
+            await asyncio.sleep(3)  # wait a bit for the file to be created
+            if not self.stdout_file.exists():
+                logger.warning(f"Running logs not found: {self.stdout_file}")
+                logger.warning("Make sure pipen-log2file plugin is enabled for your pipeline.")
+                logger.warning("Falling back to pull logs from daemon...")
+                self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
+            else:
+                self.stdout_populator.logfile = (
+                    self.stdout_file.resolve()
+                    if self.stdout_file.is_symlink()
+                    else self.stdout_file
+                )
+        else:
+            self.stdout_populator.logfile = self.stdout_file
+        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
 
     @plugin.impl
     async def on_job_polling(self, scheduler, job, counter):
@@ -811,8 +826,7 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
         )
 
         def is_valid(val: Any) -> bool:
-            """Check if a value is valid (not None, not empty string, not empty list).
-            """
+            """Check if a value is valid (not None, not empty string, not empty list)."""
             if val is None:
                 return False
             if isinstance(val, bool):
@@ -821,11 +835,7 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
 
         # update parsed with the defaults
         for key, val in defaults.items():
-            if (
-                key == "mount"
-                and val
-                and getattr(known_parsed, key, None)
-            ):
+            if key == "mount" and val and getattr(known_parsed, key, None):
                 if not isinstance(val, (tuple, list)):
                     val = [val]
                 val = list(val)
