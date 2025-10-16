@@ -617,30 +617,45 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             scheduler: The scheduler instance.
             job: The job that started.
         """
-        logger.info("Job is picked up by Google Batch, pulling stdout/stderr...")
+        logger.info("Job is picked up by Google Batch, pulling stdout/stderr ...")
         if not self.stdout_file:
             self.stdout_populator.logfile = scheduler.workdir.joinpath(
                 "0", "job.stdout"
             )
         elif not self.stdout_file.exists():
-            await asyncio.sleep(3)  # wait a bit for the file to be created
+            logger.warning(f"Running logs file not found: {self.stdout_file}")
+            logger.warning("  Waiting for it to be created ...")
+            i = 0
+            while not self.stdout_file.exists():
+                await asyncio.sleep(3)
+                i += 1
+                if i >= 20:
+                    break
+
             if not self.stdout_file.exists():
-                logger.warning(f"Running logs not found: {self.stdout_file}")
                 logger.warning(
-                    "Make sure pipen-log2file plugin is enabled for your pipeline."
+                    "  Still not found, falling back to pull logs from daemon ..."
                 )
-                logger.warning("Falling back to pull logs from daemon...")
+                logger.warning(
+                    "  Make sure pipen-log2file plugin is enabled for your pipeline."
+                )
                 self.stdout_populator.logfile = scheduler.workdir.joinpath(
                     "0", "job.stdout"
                 )
             else:
+                logger.info("  Found the running logs, pulling ...")
                 self.stdout_populator.logfile = (
                     self.stdout_file.resolve()
                     if self.stdout_file.is_symlink()
                     else self.stdout_file
                 )
         else:
-            self.stdout_populator.logfile = self.stdout_file
+            self.stdout_populator.logfile = (
+                self.stdout_file.resolve()
+                if self.stdout_file.is_symlink()
+                else self.stdout_file
+            )
+
         self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
 
     @plugin.impl
