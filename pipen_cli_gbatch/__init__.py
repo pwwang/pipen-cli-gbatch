@@ -200,6 +200,10 @@ class CliGbatchDaemon:
             target: The target mount path inside the container.
         """
         mount = self.config.get("mount", [])
+        if not isinstance(mount, (list, tuple, set)):
+            mount = [mount]
+        else:
+            mount = list(mount)
         # mount the workdir
         mount.append(f"{source}:{target}")
 
