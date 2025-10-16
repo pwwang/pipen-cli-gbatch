@@ -306,6 +306,7 @@ async def test_get_xqute():
             "view_logs": False,
             "error_strategy": "halt",
             "num_retries": 0,
+            "plain": False,
             "jobname_prefix": "test-get-xqute",
             "workdir": "gs://bucket/path/workdir",
             "name": "TestGetXquteDaemon",

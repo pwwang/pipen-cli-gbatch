@@ -619,14 +619,20 @@ class XquteCliGbatchPlugin:  # pragma: no cover
         """
         logger.info("Job is picked up by Google Batch, pulling stdout/stderr...")
         if not self.stdout_file:
-            self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
+            self.stdout_populator.logfile = scheduler.workdir.joinpath(
+                "0", "job.stdout"
+            )
         elif not self.stdout_file.exists():
             await asyncio.sleep(3)  # wait a bit for the file to be created
             if not self.stdout_file.exists():
                 logger.warning(f"Running logs not found: {self.stdout_file}")
-                logger.warning("Make sure pipen-log2file plugin is enabled for your pipeline.")
+                logger.warning(
+                    "Make sure pipen-log2file plugin is enabled for your pipeline."
+                )
                 logger.warning("Falling back to pull logs from daemon...")
-                self.stdout_populator.logfile = scheduler.workdir.joinpath("0", "job.stdout")
+                self.stdout_populator.logfile = scheduler.workdir.joinpath(
+                    "0", "job.stdout"
+                )
             else:
                 self.stdout_populator.logfile = (
                     self.stdout_file.resolve()
@@ -826,7 +832,8 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
         )
 
         def is_valid(val: Any) -> bool:
-            """Check if a value is valid (not None, not empty string, not empty list)."""
+            """Check if a value is valid (not None, not empty string, not empty list).
+            """
             if val is None:
                 return False
             if isinstance(val, bool):
