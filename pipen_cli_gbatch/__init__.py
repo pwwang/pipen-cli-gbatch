@@ -324,6 +324,8 @@ class CliGbatchDaemon:
                 stdout_file = None
             else:
                 stdout_file = AnyPath(f"{self._command_workdir}/run-latest.log")
+                if stdout_file.exists():
+                    stdout_file.unlink()
 
             plugins.append(XquteCliGbatchPlugin(stdout_file=stdout_file))
 
