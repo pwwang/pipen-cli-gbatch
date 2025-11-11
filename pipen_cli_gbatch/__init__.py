@@ -640,10 +640,14 @@ class XquteCliGbatchPlugin:  # pragma: no cover
 
             if not self.stdout_file.exists():
                 logger.warning(
-                    "  Still not found, falling back to pull logs from daemon ..."
+                    "  Still not found, "
+                    "falling back to pull stdout/stderr from daemon ..."
                 )
                 logger.warning(
                     "  Make sure pipen-log2file plugin is enabled for your pipeline."
+                )
+                logger.warning(
+                    "  Or use --plain if you are not running a pipen pipeline."
                 )
                 self.stdout_populator.logfile = scheduler.workdir.joinpath(
                     "0", "job.stdout"
