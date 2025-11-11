@@ -36,6 +36,7 @@ pytest-cov = "^6.2.1"
 pytest-asyncio = "^1.1.0"
 pytest-xdist = "^3.8.0"
 pytest-forked = "^1.6.0"
+backports-asyncio-runner = {version = "^1.1.0", python = "<3.11"}
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
