@@ -779,9 +779,9 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
         conf = ProfileConfig.load(
             *config_files,
             ignore_nonexist=True,
-            base=profile,
             allow_missing_base=True,
         )
+        conf = ProfileConfig.use_profile(conf, profile, allow_missing_base=True)
         conf = ProfileConfig.detach(conf)
         return conf.get("scheduler_opts", {})
 
