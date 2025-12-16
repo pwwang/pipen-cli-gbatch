@@ -13,9 +13,9 @@ generate-setup-file = true
 
 [tool.poetry.dependencies]
 python = "^3.9"
-pipen = "^0.17.19"
-pipen-poplog = "^0.3.6"
-google-cloud-storage = "^3.0.0"
+pipen = "^1.0"
+pipen-poplog = "^1.0"
+google-cloud-storage = "^3"
 
 [tool.pytest.ini_options]
 addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
