@@ -13,9 +13,9 @@ generate-setup-file = true
 
 [tool.poetry.dependencies]
 python = "^3.9"
-pipen = "^1.0"
-pipen-poplog = "^1.0"
-google-cloud-storage = "^3"
+pipen = "^1.1.1"
+pipen-poplog = "^1.1"
+panpath = {version = "^0.4.8", extras = ["async-gs"]}
 
 [tool.pytest.ini_options]
 addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
@@ -39,5 +39,5 @@ pytest-forked = "^1.6.0"
 backports-asyncio-runner = {version = "^1.1.0", python = "<3.11"}
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
