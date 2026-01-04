@@ -65,11 +65,10 @@ import sys
 import asyncio
 from contextlib import suppress
 from pathlib import Path
-from time import sleep
 from typing import Any
 from diot import Diot
 from argx import Namespace
-from yunpath import AnyPath, GSPath
+from panpath import PanPath, GSPath
 from simpleconf import Config, ProfileConfig
 from xqute import Xqute, plugin
 from xqute.utils import logger, RichHandler, DuplicateFilter
@@ -137,7 +136,7 @@ class CliGbatchDaemon:
         self.command = command
         self._command_workdir = None
 
-    def _get_arg_from_command(self, arg: str) -> str | None:
+    async def _get_arg_from_command(self, arg: str) -> str | None:
         """Get the value of the given argument from the command line.
 
         Args:
@@ -161,11 +160,11 @@ class CliGbatchDaemon:
             value = self.command[index + 1]
         elif any(cmd_at):
             index = cmd_at.index(True)
-            config_file = AnyPath(self.command[index][1:])
-            if not config_file.exists():
+            config_file = PanPath(self.command[index][1:])
+            if not await config_file.a_exists():
                 raise FileNotFoundError(f"Config file not found: {config_file}")
-
-            conf = Config.load_one(config_file)
+            content = await config_file.a_read_text()
+            conf = Config.load_one(content, loader="tomls")
             value = conf.get(arg, None)
         else:
             value = None
@@ -209,7 +208,7 @@ class CliGbatchDaemon:
 
         self.config["mount"] = mount
 
-    def _handle_workdir(self):
+    async def _handle_workdir(self):
         """Handle workdir configuration and mounting.
 
         Validates that workdir is a Google Storage bucket path and sets up
@@ -218,17 +217,17 @@ class CliGbatchDaemon:
         Raises:
             SystemExit: If workdir is not a valid Google Storage bucket path.
         """
-        command_name = self._get_arg_from_command("name") or self.config["name"]
+        command_name = await self._get_arg_from_command("name") or self.config["name"]
         from_mount_as_cwd = self.mount_as_cwd and not self.config.workdir
         if from_mount_as_cwd:
             self.config.workdir = f"{self.mount_as_cwd}/.pipen/{command_name}"
 
         # self._command_workdir to save the original command workdir
-        self._command_workdir = workdir = (
-            self.config.get("workdir", None) or self._get_arg_from_command("workdir")
-        )
+        self._command_workdir = workdir = self.config.get(
+            "workdir", None
+        ) or await self._get_arg_from_command("workdir")
 
-        if not workdir or not isinstance(AnyPath(workdir), GSPath):
+        if not workdir or not isinstance(PanPath(workdir), GSPath):
             print(
                 "\033[1;4mError\033[0m: An existing Google Storage Bucket path is "
                 "required for --workdir.\n"
@@ -245,16 +244,16 @@ class CliGbatchDaemon:
             # replace --workdir value with the mounted workdir in the command
             self._replace_arg_in_command("workdir", GbatchScheduler.MOUNTED_METADIR)
 
-    def _handle_outdir(self):
+    async def _handle_outdir(self):
         """Handle output directory configuration and mounting.
 
         If an output directory is specified in the command, mounts it to the
         container and updates the command to use the mounted path.
         """
-        command_outdir = self._get_arg_from_command("outdir")
+        command_outdir = await self._get_arg_from_command("outdir")
 
         if command_outdir:
-            coudir = AnyPath(command_outdir)
+            coudir = PanPath(command_outdir)
             if (
                 not isinstance(coudir, GSPath)
                 and not coudir.is_absolute()
@@ -265,13 +264,13 @@ class CliGbatchDaemon:
                 self._add_mount(command_outdir, GbatchScheduler.MOUNTED_OUTDIR)
                 self._replace_arg_in_command("outdir", GbatchScheduler.MOUNTED_OUTDIR)
         elif self.mount_as_cwd:
-            command_name = self._get_arg_from_command("name") or self.config.name
+            command_name = await self._get_arg_from_command("name") or self.config.name
             self._replace_arg_in_command(
                 "outdir",
                 f"{MOUNTED_CWD}/{command_name}-output",
             )
 
-    def _infer_name(self):
+    async def _infer_name(self):
         """Infer the daemon name from configuration or command arguments.
 
         Priority order:
@@ -281,7 +280,7 @@ class CliGbatchDaemon:
         """
         name = self.config.get("name", None)
         if not name:
-            command_name = self._get_arg_from_command("name")
+            command_name = await self._get_arg_from_command("name")
             if not command_name:
                 name = "PipenCliGbatchDaemon"
             else:
@@ -289,7 +288,7 @@ class CliGbatchDaemon:
 
         self.config["name"] = name
 
-    def _infer_jobname_prefix(self):
+    async def _infer_jobname_prefix(self):
         """Infer the job name prefix for the Google Cloud Batch scheduler.
 
         Priority order:
@@ -299,7 +298,7 @@ class CliGbatchDaemon:
         """
         prefix = self.config.get("jobname_prefix", None)
         if not prefix:
-            command_name = self._get_arg_from_command("name")
+            command_name = await self._get_arg_from_command("name")
             if not command_name:
                 prefix = "pipen-cli-gbatch-daemon"
             else:
@@ -307,7 +306,7 @@ class CliGbatchDaemon:
 
         self.config["jobname_prefix"] = prefix
 
-    def _get_xqute(self) -> Xqute:
+    async def _get_xqute(self) -> Xqute:
         """Create and configure an Xqute instance for job execution.
 
         Returns:
@@ -323,9 +322,9 @@ class CliGbatchDaemon:
                 # use the stdout file from daemon
                 stdout_file = None
             else:
-                stdout_file = AnyPath(f"{self._command_workdir}/run-latest.log")
-                if stdout_file.exists():
-                    stdout_file.unlink()
+                stdout_file = PanPath(f"{self._command_workdir}/run-latest.log")
+                if await stdout_file.a_exists():
+                    await stdout_file.a_unlink()
 
             plugins.append(XquteCliGbatchPlugin(stdout_file=stdout_file))
 
@@ -400,9 +399,9 @@ class CliGbatchDaemon:
             print("\033[1;4mError\033[0m: No command to run is provided.\n")
             sys.exit(1)
 
-        xqute = self._get_xqute()
+        xqute = await self._get_xqute()
 
-        await xqute.put(self.command)
+        await xqute.feed(self.command)
         await xqute.run_until_complete()
 
     async def _run_nowait(self):
@@ -419,7 +418,7 @@ class CliGbatchDaemon:
             print("\033[1;4mError\033[0m: No command to run is provided.\n")
             sys.exit(1)
 
-        xqute = self._get_xqute()
+        xqute = await self._get_xqute()
 
         try:
             job = xqute.scheduler.create_job(0, self.command)
@@ -468,7 +467,7 @@ class CliGbatchDaemon:
             if xqute.plugin_context:  # pragma: no cover
                 xqute.plugin_context.__exit__()
 
-    def _run_view_logs(self):  # pragma: no cover
+    async def _run_view_logs(self):  # pragma: no cover
         """Pull and display logs from the Google Cloud Batch job.
 
         Continuously monitors and displays stdout/stderr logs based on the
@@ -478,8 +477,8 @@ class CliGbatchDaemon:
             SystemExit: If workdir is not found or when interrupted by user.
         """
         log_source = {}
-        workdir = AnyPath(self.config["workdir"]) / self.config["name"] / "0"
-        if not workdir.exists():
+        workdir = PanPath(self.config["workdir"]) / self.config["name"] / "0"
+        if not await workdir.a_exists():
             print(f"\033[1;4mError\033[0m: Workdir not found: {workdir}\n")
             sys.exit(1)
 
@@ -502,13 +501,13 @@ class CliGbatchDaemon:
         try:
             while True:
                 for key, populator in poplulators.items():
-                    lines = populator.populate()
+                    lines = await populator.populate()
                     for line in lines:
                         if len(log_source) > 1:
                             print(f"/{key} {line}")
                         else:
                             print(line)
-                sleep(5)
+                await asyncio.sleep(5)
         except KeyboardInterrupt:
             for key, populator in poplulators.items():
                 if populator.residue:
@@ -520,7 +519,7 @@ class CliGbatchDaemon:
             logger.info("Stopped pulling logs.")
             sys.exit(0)
 
-    def setup(self):
+    async def setup(self):
         """Set up logging and configuration for the daemon.
 
         Configures logging handlers and filters, validates workdir requirements,
@@ -534,10 +533,10 @@ class CliGbatchDaemon:
         logger.setLevel(self.config.loglevel.upper())
 
         if not self.config.plain:
-            self._infer_name()
-            self._handle_workdir()
-            self._handle_outdir()
-            self._infer_jobname_prefix()
+            await self._infer_name()
+            await self._handle_workdir()
+            await self._handle_outdir()
+            await self._infer_jobname_prefix()
         else:
             if "name" not in self.config or not self.config.name:
                 self.config["name"] = "PipenCliGbatchDaemon"
@@ -546,7 +545,7 @@ class CliGbatchDaemon:
                 self.config.workdir = f"{self.mount_as_cwd}/.pipen"
 
             if not self.config.workdir or not isinstance(
-                AnyPath(self.config.workdir),
+                PanPath(self.config.workdir),
                 GSPath,
             ):
                 print(
@@ -568,12 +567,12 @@ class CliGbatchDaemon:
             self._run_version()
             return
 
-        self.setup()
+        await self.setup()
         self._show_scheduler_opts()
         if self.config.nowait:
             await self._run_nowait()
         elif self.config.view_logs:
-            self._run_view_logs()
+            await self._run_view_logs()
         else:
             await self._run_wait()
 
@@ -628,17 +627,17 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             self.stdout_populator.logfile = scheduler.workdir.joinpath(
                 "0", "job.stdout"
             )
-        elif not self.stdout_file.exists():
+        elif not await self.stdout_file.a_exists():
             logger.warning(f"Running logs file not found: {self.stdout_file}")
             logger.warning("  Waiting for it to be created ...")
             i = 0
-            while not self.stdout_file.exists():
+            while not await self.stdout_file.a_exists():
                 await asyncio.sleep(3)
                 i += 1
                 if i >= 20:
                     break
 
-            if not self.stdout_file.exists():
+            if not await self.stdout_file.a_exists():
                 logger.warning(
                     "  Still not found, "
                     "falling back to pull stdout/stderr from daemon ..."
@@ -655,14 +654,14 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             else:
                 logger.info("  Found the running logs, pulling ...")
                 self.stdout_populator.logfile = (
-                    self.stdout_file.resolve()
-                    if self.stdout_file.is_symlink()
+                    await self.stdout_file.a_resolve()
+                    if await self.stdout_file.a_is_symlink()
                     else self.stdout_file
                 )
         else:
             self.stdout_populator.logfile = (
-                self.stdout_file.resolve()
-                if self.stdout_file.is_symlink()
+                await self.stdout_file.a_resolve()
+                if await self.stdout_file.a_is_symlink()
                 else self.stdout_file
             )
 
@@ -682,13 +681,13 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             return
 
         if self.stderr_populator:
-            stdout_lines = self.stdout_populator.populate()
+            stdout_lines = await self.stdout_populator.populate()
             self.stdout_populator.increment_counter(len(stdout_lines))
             for line in stdout_lines:
                 logger.info(f"/STDOUT {line}")
 
         if self.stderr_populator:
-            stderr_lines = self.stderr_populator.populate()
+            stderr_lines = await self.stderr_populator.populate()
             self.stderr_populator.increment_counter(len(stderr_lines))
             for line in stderr_lines:
                 logger.error(f"/STDERR {line}")
@@ -737,10 +736,15 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             xqute: The Xqute instance.
             sig: The shutdown signal.
         """
-        del self.stdout_populator
-        self.stdout_populator = None
-        del self.stderr_populator
-        self.stderr_populator = None
+        # we need to await self.stdout_populator.destroy() but on_shutdown
+        # cannot be async so we just delete them here
+        loop = asyncio.get_event_loop()
+        if self.stdout_populator:
+            loop.run_until_complete(self.stdout_populator.destroy())
+            self.stdout_populator = None
+        if self.stderr_populator:
+            loop.run_until_complete(self.stderr_populator.destroy())
+            self.stderr_populator = None
 
 
 class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
@@ -758,8 +762,9 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
     __version__ = __version__
     name = "gbatch"
 
-    @staticmethod
-    def _get_defaults_from_config(
+    @classmethod
+    async def _get_defaults_from_config(
+        cls,
         config_files: list[str],
         profile: str | None,
     ) -> dict:
@@ -772,11 +777,10 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
         Returns:
             Dictionary containing scheduler options from the configuration.
         """
-        """Get the default configurations from the given config files and profile."""
         if not profile:
             return {}
 
-        conf = ProfileConfig.load(
+        conf = await ProfileConfig.a_load(
             *config_files,
             ignore_nonexist=True,
             allow_missing_base=True,
@@ -851,9 +855,11 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
 
             known_parsed.command = known_parsed.command[1:]
 
-        defaults = self.__class__._get_defaults_from_config(
-            CONFIG_FILES,
-            known_parsed.profile,
+        defaults = asyncio.run(
+            self.__class__._get_defaults_from_config(
+                CONFIG_FILES,
+                known_parsed.profile,
+            )
         )
 
         def is_valid(val: Any) -> bool:
