@@ -71,10 +71,10 @@ from argx import Namespace
 from panpath import PanPath, GSPath
 from simpleconf import Config, ProfileConfig
 from xqute import Xqute, plugin
-from xqute.utils import logger, RichHandler, DuplicateFilter
+from xqute.utils import logger, RichHandler
 from pipen import __version__ as pipen_version
 from pipen.defaults import CONFIG_FILES
-from pipen.cli import CLIPlugin
+from pipen.cli import AsyncCLIPlugin
 from pipen.scheduler import GbatchScheduler
 from pipen_poplog import LogsPopulator
 
@@ -421,24 +421,25 @@ class CliGbatchDaemon:
         xqute = await self._get_xqute()
 
         try:
-            job = xqute.scheduler.create_job(0, self.command)
+            job = await xqute.scheduler.create_job(0, self.command)
+            jid = await job.get_jid()
             if await xqute.scheduler.job_is_running(job):
-                logger.info(f"Job is already submited or running: {job.jid}")
+                logger.info(f"Job is already submited or running: {jid}")
                 logger.info("")
                 logger.info("To cancel the job, run:")
                 logger.info(
                     "> gcloud batch jobs cancel "
-                    f"--location {xqute.scheduler.location} {job.jid}"
+                    f"--location {xqute.scheduler.location} {jid}"
                 )
             else:
                 await xqute.scheduler.submit_job_and_update_status(job)
-                logger.info(f"Job is running in a detached mode: {job.jid}")
+                logger.info(f"Job is running in a detached mode: {jid}")
 
             logger.info("")
             logger.info("To check the job status, run:")
             logger.info(
                 "💻> gcloud batch jobs describe"
-                f" --location {xqute.scheduler.location} {job.jid}"
+                f" --location {xqute.scheduler.location} {jid}"
             )
             logger.info("")
             logger.info("To pull the logs from both stdout and stderr, run:")
@@ -529,7 +530,7 @@ class CliGbatchDaemon:
             SystemExit: If workdir is not a valid Google Storage bucket path.
         """
         logger.addHandler(RichHandler(show_path=False, show_time=False))
-        logger.addFilter(DuplicateFilter())
+        # logger.addFilter(DuplicateFilter())
         logger.setLevel(self.config.loglevel.upper())
 
         if not self.config.plain:
@@ -747,7 +748,7 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             self.stderr_populator = None
 
 
-class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
+class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
     """Simplify running commands via Google Cloud Batch.
 
     This CLI plugin provides a command-line interface for executing arbitrary
@@ -796,6 +797,7 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
             parser: The main argument parser.
             subparser: The subparser for this specific command.
         """
+        print("Initializing CliGbatchPlugin ...")
         super().__init__(parser, subparser)
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
@@ -826,14 +828,19 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
   > pipen gbatch --view-logs all --name my-daemon-name \\
     --workdir gs://my-bucket/workdir
         """  # noqa: E501
-        argfile = Path(__file__).parent / "daemon_args.toml"
-        args_def = Config.load(argfile, loader="toml")
+
+    async def post_init(self):
+        """Add command-line arguments specific to the gbatch plugin."""
+        argfile = PanPath(__file__).parent / "daemon_args.toml"
+        args_def = await Config.a_load(argfile, loader="toml")
         mutually_exclusive_groups = args_def.get("mutually_exclusive_groups", [])
         groups = args_def.get("groups", [])
         arguments = args_def.get("arguments", [])
-        subparser._add_decedents(mutually_exclusive_groups, groups, [], arguments, [])
+        self.subparser._add_decedents(
+            mutually_exclusive_groups, groups, [], arguments, []
+        )
 
-    def parse_args(self, known_parsed, unparsed_argv: list[str]) -> Namespace:
+    async def parse_args(self, known_parsed, unparsed_argv: list[str]) -> Namespace:
         """Parse command-line arguments and apply configuration defaults.
 
         Args:
@@ -847,7 +854,7 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
             SystemExit: If command arguments are not properly formatted.
         """
         # Check if there is any unknown args
-        known_parsed = super().parse_args(known_parsed, unparsed_argv)
+        known_parsed = await super().parse_args(known_parsed, unparsed_argv)
         if known_parsed.command:
             if known_parsed.command[0] != "--":
                 print("\033[1;4mError\033[0m: The command to run must be after '--'.\n")
@@ -855,16 +862,13 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
 
             known_parsed.command = known_parsed.command[1:]
 
-        defaults = asyncio.run(
-            self.__class__._get_defaults_from_config(
-                CONFIG_FILES,
-                known_parsed.profile,
-            )
+        defaults = await self.__class__._get_defaults_from_config(
+            CONFIG_FILES,
+            known_parsed.profile,
         )
 
         def is_valid(val: Any) -> bool:
-            """Check if a value is valid (not None, not empty string, not empty list).
-            """
+            """Check if a value is valid (not None, not empty string, not empty list)."""
             if val is None:
                 return False
             if isinstance(val, bool):
@@ -894,10 +898,10 @@ class CliGbatchPlugin(CLIPlugin):  # pragma: no cover
 
         return known_parsed
 
-    def exec_command(self, args: Namespace) -> None:
+    async def exec_command(self, args: Namespace) -> None:
         """Execute the gbatch command with the provided arguments.
 
         Args:
             args: Parsed command-line arguments containing configuration and command.
         """
-        asyncio.run(CliGbatchDaemon(args, args.command).run())
+        await CliGbatchDaemon(args, args.command).run()

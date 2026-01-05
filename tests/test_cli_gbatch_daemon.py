@@ -4,6 +4,7 @@ import pytest
 # import signal
 # import asyncio
 from unittest.mock import patch
+from panpath import PanPath
 from argx import Namespace
 from pipen_cli_gbatch import (
     CliGbatchDaemon,
@@ -12,7 +13,7 @@ from pipen_cli_gbatch import (
     pipen_version,
     __version__ as gbatch_version,
 )
-from .mock.mocks import MockAnyPath, mock_isinstance, MockXquteGbatchScheduler
+from .mock.mocks import mock_isinstance, MockXquteGbatchScheduler
 # from .conftest import MOCK_MOUNTS_DIR
 
 
@@ -33,26 +34,27 @@ def test_init():
     assert daemon.command == ["cmd", "arg1"]
 
 
-def test_get_arg_from_command(tmp_path):
+async def test_get_arg_from_command(tmp_path):
+    tmp_path = PanPath(tmp_path)
     daemon = CliGbatchDaemon({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
 
-    assert daemon._get_arg_from_command("arg1") == "value1"
-    assert daemon._get_arg_from_command("arg2") == "value2"
-    assert daemon._get_arg_from_command("arg3") is None
-    assert daemon._get_arg_from_command("cmd") is None
+    assert await daemon._get_arg_from_command("arg1") == "value1"
+    assert await daemon._get_arg_from_command("arg2") == "value2"
+    assert await daemon._get_arg_from_command("arg3") is None
+    assert await daemon._get_arg_from_command("cmd") is None
 
     configfile = tmp_path / "config.toml"
-    configfile.write_text("key = 'value'")
+    await configfile.a_write_text("key = 'value'")
     daemon = CliGbatchDaemon({}, ["cmd", f"@{configfile}"])
-    assert daemon._get_arg_from_command("key") == "value"
+    assert await daemon._get_arg_from_command("key") == "value"
 
     nonexist_file = tmp_path / "nonexist.toml"
     daemon = CliGbatchDaemon({}, ["cmd", f"@{nonexist_file}"])
     with pytest.raises(FileNotFoundError):
-        daemon._get_arg_from_command("key")
+        await daemon._get_arg_from_command("key")
 
 
-def test_replace_arg_in_command(tmp_path):
+def test_replace_arg_in_command():
     daemon = CliGbatchDaemon({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
 
     daemon._replace_arg_in_command("arg1", "newvalue1")
@@ -80,20 +82,17 @@ def test_add_mount():
 
 
 # @pytest.mark.forked
-def test_handle_workdir(tmp_path):
+async def test_handle_workdir():
     # no workdir
     daemon = CliGbatchDaemon({}, ["cmd"])
-    daemon._infer_name()
+    await daemon._infer_name()
     with pytest.raises(SystemExit):
-        daemon._handle_workdir()
+        await daemon._handle_workdir()
 
     daemon = CliGbatchDaemon({"workdir": "gs://bucket/path/workdir"}, ["cmd"])
-    with (
-        patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-        patch("pipen_cli_gbatch.isinstance", mock_isinstance),
-    ):
-        daemon._infer_name()
-        daemon._handle_workdir()
+    with patch("pipen_cli_gbatch.isinstance", mock_isinstance):
+        await daemon._infer_name()
+        await daemon._handle_workdir()
     assert daemon.config.workdir == "gs://bucket/path/workdir"
     assert (
         f"gs://bucket/path/workdir:{GbatchScheduler.MOUNTED_METADIR}"
@@ -103,9 +102,9 @@ def test_handle_workdir(tmp_path):
     assert GbatchScheduler.MOUNTED_METADIR in daemon.command
 
 
-def test_handler_outdir(tmp_path):
+async def test_handler_outdir():
     daemon = CliGbatchDaemon({}, ["cmd", "--outdir", "gs://bucket/path/outdir"])
-    daemon._handle_outdir()
+    await daemon._handle_outdir()
     assert (
         f"gs://bucket/path/outdir:{GbatchScheduler.MOUNTED_OUTDIR}"
         in daemon.config.mount
@@ -114,31 +113,31 @@ def test_handler_outdir(tmp_path):
     assert GbatchScheduler.MOUNTED_OUTDIR in daemon.command
 
 
-def test_infer_name():
+async def test_infer_name():
     daemon = CliGbatchDaemon({"name": "MyDaemon"}, ["cmd"])
-    daemon._infer_name()
+    await daemon._infer_name()
     assert daemon.config.name == "MyDaemon"
 
     daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
-    daemon._infer_name()
+    await daemon._infer_name()
     assert daemon.config.name == "MyJobGbatchDaemon"
 
     daemon = CliGbatchDaemon({}, ["cmd"])
-    daemon._infer_name()
+    await daemon._infer_name()
     assert daemon.config.name == "PipenCliGbatchDaemon"
 
 
-def test_infer_jobname_prefix():
+async def test_infer_jobname_prefix():
     daemon = CliGbatchDaemon({"jobname_prefix": "my-prefix"}, ["cmd"])
-    daemon._infer_jobname_prefix()
+    await daemon._infer_jobname_prefix()
     assert daemon.config.jobname_prefix == "my-prefix"
 
     daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
-    daemon._infer_jobname_prefix()
+    await daemon._infer_jobname_prefix()
     assert daemon.config.jobname_prefix == "myjob-gbatch-daemon"
 
     daemon = CliGbatchDaemon({}, ["cmd"])
-    daemon._infer_jobname_prefix()
+    await daemon._infer_jobname_prefix()
     assert daemon.config.jobname_prefix == "pipen-cli-gbatch-daemon"
 
 
@@ -151,7 +150,7 @@ def test_run_version(capsys):
     assert f"pipen version: v{pipen_version}" in captured.out
 
 
-def test_show_scheduler_opts(caplog):
+async def test_show_scheduler_opts(caplog):
     daemon = CliGbatchDaemon(
         {
             "plain": True,
@@ -161,11 +160,8 @@ def test_show_scheduler_opts(caplog):
         },
         ["cmd"],
     )
-    with (
-        patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-        patch("pipen_cli_gbatch.isinstance", mock_isinstance),
-    ):
-        daemon.setup()
+    with patch("pipen_cli_gbatch.isinstance", mock_isinstance):
+        await daemon.setup()
 
     daemon._show_scheduler_opts()
     assert "Scheduler Options:" in caplog.text
@@ -173,7 +169,7 @@ def test_show_scheduler_opts(caplog):
     assert "- option1: value1" in caplog.text
 
 
-def test_setup(tmp_path):
+async def test_setup(tmp_path):
     daemon = CliGbatchDaemon(
         {
             "plain": False,
@@ -185,11 +181,8 @@ def test_setup(tmp_path):
         },
         ["cmd", "--arg1", "value1"],
     )
-    with (
-        patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-        patch("pipen_cli_gbatch.isinstance", mock_isinstance),
-    ):
-        daemon.setup()
+    with patch("pipen_cli_gbatch.isinstance", mock_isinstance):
+        await daemon.setup()
 
     assert daemon.config.name == "PipenCliGbatchDaemon"
     assert daemon.config.jobname_prefix == "pipen-cli-gbatch-daemon"
@@ -207,7 +200,7 @@ def test_setup(tmp_path):
     assert "value1" in daemon.command
 
 
-def test_setup_plain_no_workdir():
+async def test_setup_plain_no_workdir():
     daemon = CliGbatchDaemon(
         {
             "plain": True,
@@ -221,11 +214,10 @@ def test_setup_plain_no_workdir():
     )
 
     with pytest.raises(SystemExit):
-        daemon.setup()
+        await daemon.setup()
 
 
 # Deadlock ...
-# @pytest.mark.asyncio
 # async def test_view_logs(mock_gcloud_path, capsys):
 #     daemon = CliGbatchDaemon(
 #         {
@@ -267,7 +259,6 @@ def test_setup_plain_no_workdir():
 
 
 # Causing deadlock
-# @pytest.mark.asyncio
 # async def test_run_wait(mock_gcloud_path, caplog):
 #     daemon = CliGbatchDaemon(
 #         {
@@ -298,7 +289,6 @@ def test_setup_plain_no_workdir():
 #     assert "cmd: command not found" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_get_xqute():
     daemon = CliGbatchDaemon(
         {
@@ -315,11 +305,10 @@ async def test_get_xqute():
         },
         ["cmd"],
     )
-    xqute = daemon._get_xqute()
+    xqute = await daemon._get_xqute()
     assert isinstance(xqute, Xqute)
 
 
-@pytest.mark.asyncio
 async def test_run_no_command_error():
     daemon = CliGbatchDaemon({"nowait": True}, [])
     with pytest.raises(SystemExit):
@@ -330,7 +319,6 @@ async def test_run_no_command_error():
         await daemon._run_nowait()
 
 
-@pytest.mark.asyncio
 async def test_run_nowait(mock_gcloud_path, caplog):
     daemon = CliGbatchDaemon(
         {
@@ -349,8 +337,6 @@ async def test_run_nowait(mock_gcloud_path, caplog):
         ["cmd"],
     )
     with (
-        # patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-        # patch("pipen_cli_gbatch.isinstance", mock_isinstance),
         patch(
             "xqute.schedulers.gbatch_scheduler.GbatchScheduler",
             MockXquteGbatchScheduler,
@@ -361,7 +347,6 @@ async def test_run_nowait(mock_gcloud_path, caplog):
     assert "cmd: command not found" not in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_run_nowait_is_running(mock_gcloud_path, caplog):
     daemon = CliGbatchDaemon(
         {
@@ -380,8 +365,6 @@ async def test_run_nowait_is_running(mock_gcloud_path, caplog):
         ["sleep", "100"],
     )
     with (
-        # patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-        # patch("pipen_cli_gbatch.isinstance", mock_isinstance),
         patch(
             "xqute.schedulers.gbatch_scheduler.GbatchScheduler",
             MockXquteGbatchScheduler,

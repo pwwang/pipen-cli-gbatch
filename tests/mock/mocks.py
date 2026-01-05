@@ -18,24 +18,24 @@ from pipen_cli_gbatch import GSPath
 from ..conftest import MOCK_MOUNTS_DIR
 
 
-class MockAnyPath:
-    def __init__(self, path):
-        self.path = path
+# class MockAnyPath:
+#     def __init__(self, path):
+#         self.path = path
 
-    def __str__(self):
-        return self.path
+#     def __str__(self):
+#         return self.path
 
-    def __truediv__(self, other):
-        return MockAnyPath(f"{self.path}/{other}")
+#     def __truediv__(self, other):
+#         return MockAnyPath(f"{self.path}/{other}")
 
-    def joinpath(self, *args):
-        return MockAnyPath(f"{self.path}/{'/'.join(args)}")
+#     def joinpath(self, *args):
+#         return MockAnyPath(f"{self.path}/{'/'.join(args)}")
 
-    def mkdir(self, exist_ok=False, parents=False):
-        pass
+#     def mkdir(self, exist_ok=False, parents=False):
+#         pass
 
-    def exists(self):
-        return True
+#     def exists(self):
+#         return True
 
 
 def mock_isinstance(path, cls):
