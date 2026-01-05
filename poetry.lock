@@ -1703,14 +1703,14 @@ xml = ["lxml (>=4.9.2)"]
 
 [[package]]
 name = "panpath"
-version = "0.4.8"
+version = "0.4.9"
 description = "Universal sync/async local/cloud path library with pathlib-compatible interface"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "panpath-0.4.8-py3-none-any.whl", hash = "sha256:d3dffda701b4503dccb437fe845a9882c4e3d35c38c26accfbd69d4b924a2dab"},
-    {file = "panpath-0.4.8.tar.gz", hash = "sha256:d6db046824a0924e37bea19afa88eca17fe4c3d8909bea05948ae4ac8f193315"},
+    {file = "panpath-0.4.9-py3-none-any.whl", hash = "sha256:566e5964c80f22a17f8cb9a99fa75aed98ab962e0fed377ea7842e1889c36cf3"},
+    {file = "panpath-0.4.9.tar.gz", hash = "sha256:9a623d65bcd1415e97b776dd59bbb89e43fb20846899e86daf6b2eb1332e2aaa"},
 ]
 
 [package.dependencies]
@@ -1768,14 +1768,14 @@ xqute = ">=2.0,<3.0"
 
 [[package]]
 name = "pipen-poplog"
-version = "1.1.1"
+version = "1.1.2"
 description = "Populate logs from jobs to running log of the pipeline"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "pipen_poplog-1.1.1-py3-none-any.whl", hash = "sha256:5f1301b28de3a6393eba2e57cd3c58196ae0e4322eb695a9fe5899c817091f46"},
-    {file = "pipen_poplog-1.1.1.tar.gz", hash = "sha256:ca4a2e7fbc8686ea62866bddf74f1dfc45660747efaf55fe192925aaaa74922a"},
+    {file = "pipen_poplog-1.1.2-py3-none-any.whl", hash = "sha256:9acb6ab091792ba89fd7c5d72cef3ab99ad2473dee124b82ee1f6d0b2d302d3d"},
+    {file = "pipen_poplog-1.1.2.tar.gz", hash = "sha256:024b46543ccce85514f4a533abac88625bed8d00f37fa3ff3f24ea23d4db213a"},
 ]
 
 [package.dependencies]
@@ -2685,4 +2685,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "decfac30ad56a234756dc4c42254c249e9e8ccad8c734969e93299cc0d681a41"
+content-hash = "13a5616dc1a55a3a132c798b1c9568d17efe6be952fa77ebdd15d75a18d84b9a"

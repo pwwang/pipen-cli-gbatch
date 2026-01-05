@@ -15,7 +15,7 @@ generate-setup-file = true
 python = "^3.9"
 pipen = "^1.1.2"
 pipen-poplog = "^1.1"
-panpath = {version = "^0.4.8", extras = ["async-gs"]}
+panpath = {version = "^0.4.9", extras = ["async-gs"]}
 
 [tool.pytest.ini_options]
 addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
