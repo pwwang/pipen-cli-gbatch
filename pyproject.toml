@@ -13,7 +13,7 @@ generate-setup-file = true
 
 [tool.poetry.dependencies]
 python = "^3.9"
-pipen = "^1.1.1"
+pipen = "^1.1.2"
 pipen-poplog = "^1.1"
 panpath = {version = "^0.4.8", extras = ["async-gs"]}
 
@@ -21,7 +21,7 @@ panpath = {version = "^0.4.8", extras = ["async-gs"]}
 addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
 console_output_style = "progress"
 junit_family = "xunit1"
-asyncio_default_fixture_loop_scope = "function"
+asyncio_mode = "auto"
 filterwarnings = [
    "ignore:.+may lead to deadlocks in the child:DeprecationWarning",
 ]

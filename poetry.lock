@@ -1746,14 +1746,14 @@ executing = ">=2.0,<3.0"
 
 [[package]]
 name = "pipen"
-version = "1.1.1"
+version = "1.1.2"
 description = "A pipeline framework for python"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "pipen-1.1.1-py3-none-any.whl", hash = "sha256:aabd4fc1d4b2c9ded03205bc9e9f083c783c7670dbbea8273583fda6d6fbd349"},
-    {file = "pipen-1.1.1.tar.gz", hash = "sha256:3a5e4b8d4bec7bd430b94d43c770f1fa8c95ac3f3acc5cc4c7bb48cc00240f71"},
+    {file = "pipen-1.1.2-py3-none-any.whl", hash = "sha256:7a2f2bfb671c817ba7cf65c4bc7f495960c579de5f4943843d5731cbf977fe06"},
+    {file = "pipen-1.1.2.tar.gz", hash = "sha256:2d6f35933992e5b8061dde917ceadded2f9ec7fb0c456337575b8ec43bf33f5a"},
 ]
 
 [package.dependencies]
@@ -2685,4 +2685,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "49d0c0befbc74205f65f1072824459ef8e538ba328264d79d6d6ebf181400735"
+content-hash = "decfac30ad56a234756dc4c42254c249e9e8ccad8c734969e93299cc0d681a41"
