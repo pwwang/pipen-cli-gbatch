@@ -797,7 +797,6 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
             parser: The main argument parser.
             subparser: The subparser for this specific command.
         """
-        print("Initializing CliGbatchPlugin ...")
         super().__init__(parser, subparser)
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
@@ -868,7 +867,8 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
         )
 
         def is_valid(val: Any) -> bool:
-            """Check if a value is valid (not None, not empty string, not empty list)."""
+            """Check if a value is valid (not None, not empty string, not empty list).
+            """
             if val is None:
                 return False
             if isinstance(val, bool):
