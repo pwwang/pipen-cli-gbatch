@@ -83,6 +83,20 @@ __all__ = ("CliGbatchPlugin", "CliGbatchDaemon")
 MOUNTED_CWD = "/mnt/disks/.cwd"
 
 
+def _error_and_exit(msg: str) -> None:
+    """Print error message and exit."""
+    from rich import traceback, console
+
+    cons = console.Console()
+    traceback.install(
+        width=cons.width,
+        code_width=cons.width - 10,
+        extra_lines=1,
+        suppress=[asyncio],
+    )
+    raise ValueError(f"{msg}\n")
+
+
 class CliGbatchDaemon:
     """A daemon pipeline wrapper for running commands via Google Cloud Batch.
 
@@ -118,11 +132,9 @@ class CliGbatchDaemon:
         self.mount_as_cwd = self.config.pop("mount_as_cwd", None)
         if self.mount_as_cwd:
             if self.config.cwd:
-                print(
-                    "\033[1;4mError\033[0m: --mount-as-cwd cannot be used with "
-                    "--cwd at the same time.\n"
+                _error_and_exit(
+                    "--mount-as-cwd cannot be used with --cwd at the same time."
                 )
-                sys.exit(1)
             self.config.cwd = MOUNTED_CWD
             self._add_mount(self.mount_as_cwd, MOUNTED_CWD)
 
@@ -134,6 +146,8 @@ class CliGbatchDaemon:
                 for key, val in (item.split("=", 1) for item in self.config.labels)
             }
         self.command = command
+        # cache for command arguments
+        self._command_args: dict = {}
         self._command_workdir = None
 
     async def _get_arg_from_command(self, arg: str) -> str | None:
@@ -148,6 +162,9 @@ class CliGbatchDaemon:
         Raises:
             FileNotFoundError: If a config file is specified but doesn't exist.
         """
+        if arg in self._command_args:
+            return self._command_args[arg]
+
         cmd_equal = [cmd.startswith(f"--{arg}=") for cmd in self.command]
         cmd_space = [cmd == f"--{arg}" for cmd in self.command]
         cmd_at = [cmd.startswith("@") for cmd in self.command]
@@ -169,6 +186,7 @@ class CliGbatchDaemon:
         else:
             value = None
 
+        self._command_args[arg] = value
         return value
 
     def _replace_arg_in_command(self, arg: str, value: Any) -> None:
@@ -228,11 +246,9 @@ class CliGbatchDaemon:
         ) or await self._get_arg_from_command("workdir")
 
         if not workdir or not isinstance(PanPath(workdir), GSPath):
-            print(
-                "\033[1;4mError\033[0m: An existing Google Storage Bucket path is "
-                "required for --workdir.\n"
+            _error_and_exit(
+                "An existing Google Storage Bucket path is " "required for --workdir."
             )
-            sys.exit(1)
 
         self.config["workdir"] = workdir
         if from_mount_as_cwd:  # already mounted
@@ -282,9 +298,16 @@ class CliGbatchDaemon:
         if not name:
             command_name = await self._get_arg_from_command("name")
             if not command_name:
-                name = "PipenCliGbatchDaemon"
+                logger.warning(
+                    "'pipen gbatch' can't detect pipeline name from "
+                    "--name or 'name' in configuration file, "
+                    "using 'PipenPipeline' instead."
+                )
+                command_name = self._command_args["name"] = "PipenPipeline"
+                self._replace_arg_in_command("name", "PipenPipeline")
+                name = "PipenPipelineCliGbatchDaemon"
             else:
-                name = f"{command_name}GbatchDaemon"
+                name = f"{command_name}CliGbatchDaemon"
 
         self.config["name"] = name
 
@@ -396,8 +419,7 @@ class CliGbatchDaemon:
             SystemExit: If no command is provided.
         """
         if not self.command:
-            print("\033[1;4mError\033[0m: No command to run is provided.\n")
-            sys.exit(1)
+            _error_and_exit("No command to run is provided.")
 
         xqute = await self._get_xqute()
 
@@ -415,8 +437,7 @@ class CliGbatchDaemon:
         """
         """Run the pipeline without waiting for completion."""
         if not self.command:
-            print("\033[1;4mError\033[0m: No command to run is provided.\n")
-            sys.exit(1)
+            _error_and_exit("No command to run is provided.")
 
         xqute = await self._get_xqute()
 
@@ -480,8 +501,7 @@ class CliGbatchDaemon:
         log_source = {}
         workdir = PanPath(self.config["workdir"]) / self.config["name"] / "0"
         if not await workdir.a_exists():
-            print(f"\033[1;4mError\033[0m: Workdir not found: {workdir}\n")
-            sys.exit(1)
+            _error_and_exit(f"Workdir not found: {workdir}")
 
         if self.config.view_logs == "stdout":
             log_source["STDOUT"] = workdir.joinpath("job.stdout")
@@ -549,11 +569,10 @@ class CliGbatchDaemon:
                 PanPath(self.config.workdir),
                 GSPath,
             ):
-                print(
-                    "\033[1;4mError\033[0m: An existing Google Storage Bucket path is "
-                    "required for --workdir.\n"
+                _error_and_exit(
+                    "An existing Google Storage Bucket path is "
+                    "required for --workdir."
                 )
-                sys.exit(1)
 
     async def run(self):  # pragma: no cover
         """Execute the daemon pipeline based on configuration.
@@ -738,13 +757,13 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             sig: The shutdown signal.
         """
         # we need to await self.stdout_populator.destroy() but on_shutdown
-        # cannot be async so we just delete them here
-        loop = asyncio.get_event_loop()
+        # cannot be async. Since the event loop is already running, we need to
+        # create tasks instead of using run_until_complete
         if self.stdout_populator:
-            loop.run_until_complete(self.stdout_populator.destroy())
+            asyncio.create_task(self.stdout_populator.destroy())
             self.stdout_populator = None
         if self.stderr_populator:
-            loop.run_until_complete(self.stderr_populator.destroy())
+            asyncio.create_task(self.stderr_populator.destroy())
             self.stderr_populator = None
 
 
@@ -856,8 +875,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
         known_parsed = await super().parse_args(known_parsed, unparsed_argv)
         if known_parsed.command:
             if known_parsed.command[0] != "--":
-                print("\033[1;4mError\033[0m: The command to run must be after '--'.\n")
-                sys.exit(1)
+                _error_and_exit("The command to run must be after '--'.")
 
             known_parsed.command = known_parsed.command[1:]
 

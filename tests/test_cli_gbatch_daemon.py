@@ -86,7 +86,7 @@ async def test_handle_workdir():
     # no workdir
     daemon = CliGbatchDaemon({}, ["cmd"])
     await daemon._infer_name()
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         await daemon._handle_workdir()
 
     daemon = CliGbatchDaemon({"workdir": "gs://bucket/path/workdir"}, ["cmd"])
@@ -120,11 +120,11 @@ async def test_infer_name():
 
     daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
     await daemon._infer_name()
-    assert daemon.config.name == "MyJobGbatchDaemon"
+    assert daemon.config.name == "MyJobCliGbatchDaemon"
 
     daemon = CliGbatchDaemon({}, ["cmd"])
     await daemon._infer_name()
-    assert daemon.config.name == "PipenCliGbatchDaemon"
+    assert daemon.config.name == "PipenPipelineCliGbatchDaemon"
 
 
 async def test_infer_jobname_prefix():
@@ -184,8 +184,8 @@ async def test_setup(tmp_path):
     with patch("pipen_cli_gbatch.isinstance", mock_isinstance):
         await daemon.setup()
 
-    assert daemon.config.name == "PipenCliGbatchDaemon"
-    assert daemon.config.jobname_prefix == "pipen-cli-gbatch-daemon"
+    assert daemon.config.name == "PipenPipelineCliGbatchDaemon"
+    assert daemon.config.jobname_prefix == "pipenpipeline-gbatch-daemon"
     assert daemon.config.workdir == "gs://bucket/path/workdir"
     assert (
         f"gs://bucket/path/workdir:{GbatchScheduler.MOUNTED_METADIR}"
@@ -213,7 +213,7 @@ async def test_setup_plain_no_workdir():
         ["cmd", "--arg1", "value1"],
     )
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         await daemon.setup()
 
 
@@ -311,11 +311,11 @@ async def test_get_xqute():
 
 async def test_run_no_command_error():
     daemon = CliGbatchDaemon({"nowait": True}, [])
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         await daemon._run_wait()
 
     daemon = CliGbatchDaemon({"nowait": False}, [])
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         await daemon._run_nowait()
 
 
