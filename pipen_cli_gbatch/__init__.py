@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import sys
 import asyncio
+import hashlib
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -325,7 +326,12 @@ class CliGbatchDaemon:
             if not command_name:
                 prefix = "pipen-cli-gbatch-daemon"
             else:
-                prefix = f"{command_name.lower()}-gbatch-daemon"
+                # The max length of job name in gbatch is 48 characters
+                command_name = command_name.lower().replace("_", "-")
+                if len(command_name) > 32:
+                    hsh = hashlib.sha1(command_name.encode()).hexdigest()[:6]
+                    command_name = f"{command_name[:25]}-{hsh}"
+                prefix = f"{command_name}-gbatch-daemon"
 
         self.config["jobname_prefix"] = prefix
 
