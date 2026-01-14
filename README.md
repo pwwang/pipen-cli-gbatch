@@ -121,7 +121,7 @@ Scheduler Options:
                         If not provided, try to generate one from the command to run.
                         If the command is also not provided, use 'pipen-gbatch-daemon' as the prefix.
   --recheck-interval RECHECK_INTERVAL
-                        The interval to recheck the job status, each takes about 0.1 seconds. [default: 600]
+                        The interval to recheck the job status, each takes about 1 seconds. [default: 60]
   --cwd CWD             The working directory to run the command. If not provided, the current directory is used. You
                         can pass either a mounted path (inside the VM) or a Google Storage Bucket path (gs://...). If a
                         Google Storage Bucket path is provided, the mounted path will be inferred from the mounted paths

@@ -96,7 +96,7 @@ If the command is also not provided, use 'pipen-gbatch-daemon' as the prefix."""
 [[groups.arguments]]
 flags = ["--recheck-interval"]
 type = "int"
-default = 600
+default = 60
 help = "The interval to recheck the job status, each takes about 0.1 seconds."
 
 [[groups.arguments]]
