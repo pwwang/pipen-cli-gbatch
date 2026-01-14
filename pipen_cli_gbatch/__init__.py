@@ -79,7 +79,7 @@ from pipen.cli import AsyncCLIPlugin
 from pipen.scheduler import GbatchScheduler
 from pipen_poplog import LogsPopulator
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __all__ = ("CliGbatchPlugin", "CliGbatchDaemon")
 MOUNTED_CWD = "/mnt/disks/.cwd"
 
