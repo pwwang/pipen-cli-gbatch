@@ -393,6 +393,11 @@ class CliGbatchDaemon:
         print(f"pipen-cli-gbatch version: v{__version__}")
         print(f"pipen version: v{pipen_version}")
 
+    def _show_versions(self):
+        """Log the version information for debugging purposes."""
+        logger.info(f"pipen version: v{pipen_version}")
+        logger.info(f"pipen-cli-gbatch version: v{__version__}")
+
     def _show_scheduler_opts(self):
         """Log the scheduler options for debugging purposes."""
         logger.info("Scheduler Options:")
@@ -594,6 +599,7 @@ class CliGbatchDaemon:
             return
 
         await self.setup()
+        self._show_versions()
         self._show_scheduler_opts()
         if self.config.nowait:
             await self._run_nowait()
