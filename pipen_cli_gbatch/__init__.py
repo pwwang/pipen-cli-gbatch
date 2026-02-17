@@ -352,8 +352,12 @@ class CliGbatchDaemon:
                 stdout_file = None
             else:
                 stdout_file = PanPath(f"{self._command_workdir}/run-latest.log")
-                if await stdout_file.a_exists():
-                    await stdout_file.a_unlink()
+                # This could be problematic if the job is already running
+                # We are literally removing the running log file
+                # We need to check later if the file is created by the running job
+                # Otherwise remove the file
+                # if await stdout_file.a_exists():
+                #     await stdout_file.a_unlink()
 
             plugins.append(XquteCliGbatchPlugin(stdout_file=stdout_file))
 
@@ -433,11 +437,20 @@ class CliGbatchDaemon:
             _error_and_exit("No command to run is provided.")
 
         xqute = await self._get_xqute()
+        job = await xqute.scheduler.create_job(0, self.command)
+        if await xqute.scheduler.job_is_running(job):
+            await self._run_nowait(xqute)
+            return
+
+        if not self.config.plain:
+            log_file = PanPath(f"{self._command_workdir}/run-latest.log")
+            if await log_file.a_exists():
+                await log_file.a_unlink()
 
         await xqute.feed(self.command)
         await xqute.run_until_complete()
 
-    async def _run_nowait(self):
+    async def _run_nowait(self, xqute: Xqute | None = None):
         """Run the pipeline without waiting for completion.
 
         Submits the job to Google Cloud Batch and prints information about
@@ -450,7 +463,7 @@ class CliGbatchDaemon:
         if not self.command:
             _error_and_exit("No command to run is provided.")
 
-        xqute = await self._get_xqute()
+        xqute = xqute or await self._get_xqute()
 
         try:
             job = await xqute.scheduler.create_job(0, self.command)
