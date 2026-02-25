@@ -198,18 +198,18 @@ files = [
 
 [[package]]
 name = "argx"
-version = "0.4.2"
+version = "0.4.3"
 description = "Super-charged argparse for python"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "argx-0.4.2-py3-none-any.whl", hash = "sha256:fd1fdde7b5ae72faa74cd9bce20caa017e4589d69bdf4c33ed57bc4df49ffb3f"},
-    {file = "argx-0.4.2.tar.gz", hash = "sha256:30688135adbf5fa179619731e9525d31fbb1da4db3dd6a8505d475162e93c8f4"},
+    {file = "argx-0.4.3-py3-none-any.whl", hash = "sha256:0a2717f2b3306c8ff07bebb39b27a10ac943c8cffe99536bbc855adc7dbe90a3"},
+    {file = "argx-0.4.3.tar.gz", hash = "sha256:87d83bd6d36ab0f6dd5bae40c45980615f975c85a8db33828038bdd9a5f2d531"},
 ]
 
 [package.dependencies]
-python-simpleconf = ">=0.8,<0.9"
+python-simpleconf = ">=0.9,<0.10"
 
 [package.extras]
 anypath = ["panpath (>=0.4,<0.5)"]
@@ -1756,14 +1756,14 @@ executing = ">=2.0,<3.0"
 
 [[package]]
 name = "pipen"
-version = "1.1.8"
+version = "1.1.9"
 description = "A pipeline framework for python"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "pipen-1.1.8-py3-none-any.whl", hash = "sha256:8fd7d9ac09ae1e5ee49378c1b7cfb98d77067efe198af9911264025119c33953"},
-    {file = "pipen-1.1.8.tar.gz", hash = "sha256:6ff9a6561acfb5b264a9fe046f160d3b38f1cb1d5584a7069c9fb92146054829"},
+    {file = "pipen-1.1.9-py3-none-any.whl", hash = "sha256:3bf1fdd1a02dc70fe9039112329040f185165ba99f5fcadaf2d9e9f52ba3efe8"},
+    {file = "pipen-1.1.9.tar.gz", hash = "sha256:564bbc9ed7fcf1678d41d19540f24ac31bd78fa43ea4c4962bdd042f61f44cd5"},
 ]
 
 [package.dependencies]
@@ -1772,7 +1772,7 @@ enlighten = ">=1,<2"
 liquidpy = ">=0.8,<0.9"
 pandas = ">=2.0,<3.0"
 pipda = ">=0.13,<0.14"
-python-simpleconf = {version = ">=0.8,<0.9", extras = ["toml"]}
+python-simpleconf = {version = ">=0.9,<0.10", extras = ["toml"]}
 varname = ">=0.15,<0.16"
 xqute = ">=2.0,<3.0"
 
@@ -2190,14 +2190,14 @@ six = ">=1.5"
 
 [[package]]
 name = "python-simpleconf"
-version = "0.8.2"
+version = "0.9.0"
 description = "Simple configuration management with python."
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "python_simpleconf-0.8.2-py3-none-any.whl", hash = "sha256:8462229665207389fab5797104003d52f8c1d6d9d75c0447c5182169f80fdf30"},
-    {file = "python_simpleconf-0.8.2.tar.gz", hash = "sha256:21f9e68865ed6762a641db26900a300aee86149ab79e3d430f7811d7fcb4c47e"},
+    {file = "python_simpleconf-0.9.0-py3-none-any.whl", hash = "sha256:50db40183b7a692867af006c056676ed1eae78f6b7ca9656669c3ca8ed7dddb5"},
+    {file = "python_simpleconf-0.9.0.tar.gz", hash = "sha256:ff3cdc67acbce71eab0614cd9451336b57e3cdaa47d4b29ffff2ff26bcc1cffb"},
 ]
 
 [package.dependencies]
@@ -2211,6 +2211,9 @@ all = ["iniconfig (>=2.0,<3.0)", "python-dotenv (>=1.1,<2.0)", "pyyaml (>=6,<7)"
 async = ["aiofiles (>=23.0.0)"]
 env = ["python-dotenv (>=1.1,<2.0)"]
 ini = ["iniconfig (>=2.0,<3.0)"]
+jinja2 = ["jinja2 (>=3.0,<4.0)"]
+liquid = ["liquidpy (>=0.8,<0.9)"]
+liquidpy = ["liquidpy (>=0.8,<0.9)"]
 toml = ["rtoml (>=0.12,<0.13) ; sys_platform == \"linux\"", "tomli (>=2.0,<3.0) ; sys_platform != \"linux\""]
 yaml = ["pyyaml (>=6,<7)"]
 
@@ -2228,14 +2231,14 @@ files = [
 
 [[package]]
 name = "rich"
-version = "14.3.2"
+version = "14.3.3"
 description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
 optional = false
 python-versions = ">=3.8.0"
 groups = ["main"]
 files = [
-    {file = "rich-14.3.2-py3-none-any.whl", hash = "sha256:08e67c3e90884651da3239ea668222d19bea7b589149d8014a21c633420dbb69"},
-    {file = "rich-14.3.2.tar.gz", hash = "sha256:e712f11c1a562a11843306f5ed999475f09ac31ffb64281f73ab29ffdda8b3b8"},
+    {file = "rich-14.3.3-py3-none-any.whl", hash = "sha256:793431c1f8619afa7d3b52b2cdec859562b950ea0d4b6b505397612db8d5362d"},
+    {file = "rich-14.3.3.tar.gz", hash = "sha256:b8daa0b9e4eef54dd8cf7c86c03713f53241884e814f4e2f5fb342fe520f639b"},
 ]
 
 [package.dependencies]
