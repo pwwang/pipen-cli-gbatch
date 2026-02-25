@@ -181,8 +181,8 @@ class CliGbatchDaemon:
             config_file = PanPath(self.command[index][1:])
             if not await config_file.a_exists():
                 raise FileNotFoundError(f"Config file not found: {config_file}")
-            content = await config_file.a_read_text()
-            conf = Config.load_one(content, loader="tomls")
+            # content = await config_file.a_read_text()
+            conf = await Config.a_load_one(config_file)
             value = conf.get(arg, None)
         else:
             value = None
