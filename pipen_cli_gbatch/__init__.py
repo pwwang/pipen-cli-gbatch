@@ -78,6 +78,7 @@ from pipen.defaults import CONFIG_FILES
 from pipen.cli import AsyncCLIPlugin
 from pipen.scheduler import GbatchScheduler
 from pipen_poplog import LogsPopulator
+from pipen_args.parser_ import _pre_parse
 
 __version__ = "1.1.4"
 __all__ = ("CliGbatchPlugin", "CliGbatchDaemon")
@@ -842,6 +843,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
             subparser: The subparser for this specific command.
         """
         super().__init__(parser, subparser)
+        subparser.pre_parse = _pre_parse
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
   \u200b
