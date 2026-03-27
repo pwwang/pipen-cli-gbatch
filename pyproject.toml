@@ -13,8 +13,9 @@ generate-setup-file = true
 
 [tool.poetry.dependencies]
 python = "^3.9"
-pipen = "^1.1.2"
+pipen = "^1.1.13"
 pipen-poplog = "^1.1"
+pipen-args = "^1.2"
 panpath = {version = "^0.4.9", extras = ["async-gs"]}
 
 [tool.pytest.ini_options]
