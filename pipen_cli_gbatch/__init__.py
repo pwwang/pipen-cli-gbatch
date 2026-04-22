@@ -461,7 +461,7 @@ class CliGbatchDaemon:
             if await log_file.a_exists():
                 await log_file.a_unlink()
 
-        await xqute.feed(self.command)
+        await xqute.feed(self.command, envs=self.envs)
         await xqute.run_until_complete()
 
     async def _run_nowait(self, xqute: Xqute | None = None):
