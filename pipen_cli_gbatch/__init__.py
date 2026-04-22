@@ -133,7 +133,7 @@ class CliGbatchDaemon:
 
         self.mount_as_cwd = self.config.pop("mount_as_cwd", None)
         if self.mount_as_cwd:
-            if self.config.cwd:
+            if self.config.get("cwd"):
                 _error_and_exit(
                     "--mount-as-cwd cannot be used with --cwd at the same time."
                 )
@@ -151,6 +151,17 @@ class CliGbatchDaemon:
         # cache for command arguments
         self._command_args: dict = {}
         self._command_workdir = None
+        # envs sent to the command, can be used in the future to pass some information
+        # to the command without using command line arguments
+        self._envs: dict = {}
+
+    @property
+    def envs(self) -> dict:
+        return self._envs
+
+    @envs.setter
+    def envs(self, value: dict):
+        self._envs = value
 
     async def _get_arg_from_command(self, arg: str) -> str | None:
         """Get the value of the given argument from the command line.
@@ -238,7 +249,7 @@ class CliGbatchDaemon:
             SystemExit: If workdir is not a valid Google Storage bucket path.
         """
         command_name = await self._get_arg_from_command("name") or self.config["name"]
-        from_mount_as_cwd = self.mount_as_cwd and not self.config.workdir
+        from_mount_as_cwd = self.mount_as_cwd and not self.config.get("workdir")
         if from_mount_as_cwd:
             self.config.workdir = f"{self.mount_as_cwd}/.pipen/{command_name}"
 
@@ -438,7 +449,7 @@ class CliGbatchDaemon:
             _error_and_exit("No command to run is provided.")
 
         xqute = await self._get_xqute()
-        job = await xqute.scheduler.create_job(0, self.command)
+        job = await xqute.scheduler.create_job(0, self.command, envs=self.envs)
         if await xqute.scheduler.job_is_running(job):
             await self._run_nowait(xqute)
             return
@@ -467,7 +478,7 @@ class CliGbatchDaemon:
         xqute = xqute or await self._get_xqute()
 
         try:
-            job = await xqute.scheduler.create_job(0, self.command)
+            job = await xqute.scheduler.create_job(0, self.command, envs=self.envs)
             jid = await job.get_jid()
             if await xqute.scheduler.job_is_running(job):
                 logger.info(f"Job is already submited or running: {jid}")

@@ -376,3 +376,40 @@ async def test_run_nowait_is_running(mock_gcloud_path, caplog):
 
     # Can't get this passed in GitHub Actions for some reason
     # assert "Job is already submited or running" in caplog.text
+
+
+async def test_with_envs(mock_gcloud_path):
+    daemon = CliGbatchDaemon(
+        {
+            "nowait": False,
+            "view_logs": False,
+            "error_strategy": "halt",
+            "num_retries": 0,
+            "plain": True,
+            "jobname_prefix": "test-with-envs",
+            "workdir": "gs://bucket/path/workdir",
+            "name": "TestWithEnvsDaemon",
+            "project": "my-gcp-project",
+            "location": "us-central1",
+            "gcloud": str(mock_gcloud_path),
+            "loglevel": "info",
+        },
+        ["echo", "$ENV_VAR1", "$ENV_VAR2"],
+    )
+    daemon.envs = {"ENV_VAR1": "value1", "ENV_VAR2": "value2"}
+    with (
+        patch(
+            "xqute.schedulers.gbatch_scheduler.GbatchScheduler",
+            MockXquteGbatchScheduler,
+        )
+    ):
+        await daemon._run_nowait()
+
+    xqute = await daemon._get_xqute()
+    workdir = MOCK_MOUNTS_DIR / str(xqute.scheduler.workdir)[5:]
+    wrapped_file = workdir / "0" / "job.wrapped.gbatch"
+    assert wrapped_file.exists()
+    content = wrapped_file.read_text()
+    assert "export ENV_VAR1=value1" in content
+    assert "export ENV_VAR2=value2" in content
+
