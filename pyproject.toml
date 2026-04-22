@@ -1,22 +1,37 @@
-[tool.poetry]
+[project]
 name = "pipen-cli-gbatch"
-version = "1.1.5"
+dynamic = ["version"]
 description = "A pipen cli plugin to run command via Google Cloud Batch"
-authors = ["pwwang <pwwang@pwwang.com>"]
+authors = [{name = "pwwang", email = "pwwang@pwwang.com"}]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/pwwang/pipen-cli-gbatch"
-repository = "https://github.com/pwwang/pipen-cli-gbatch"
+requires-python = ">=3.9"
+dependencies = [
+   "pipen>=1.1.13,<2",
+   "pipen-poplog>=1.1,<2",
+   "pipen-args>=1.2,<2",
+   "panpath[async-gs]>=0.4.9,<0.5",
+]
 
-[tool.poetry.build]
-generate-setup-file = true
+[tool.hatch.version]
+path = "pipen_cli_gbatch/__init__.py"
 
-[tool.poetry.dependencies]
-python = "^3.9"
-pipen = "^1.1.13"
-pipen-poplog = "^1.1"
-pipen-args = "^1.2"
-panpath = {version = "^0.4.9", extras = ["async-gs"]}
+[project.urls]
+Homepage = "https://github.com/pwwang/pipen-cli-gbatch"
+Repository = "https://github.com/pwwang/pipen-cli-gbatch"
+
+[project.entry-points."pipen_cli"]
+cli-gbatch = "pipen_cli_gbatch:CliGbatchPlugin"
+
+[dependency-groups]
+dev = [
+   "pytest>=8.4.1,<9",
+   "pytest-cov>=6.2.1,<7",
+   "pytest-asyncio>=1.1.0,<2",
+   "pytest-xdist>=3.8.0,<4",
+   "pytest-forked>=1.6.0,<2",
+   "backports-asyncio-runner>=1.1.0,<2; python_version < '3.11'",
+]
 
 [tool.pytest.ini_options]
 addopts = "-vv -n auto --dist loadgroup -p no:benchmark -W error::UserWarning --cov-config=.coveragerc --cov=pipen_cli_gbatch --cov-report xml:.coverage.xml --cov-report term-missing"
@@ -27,18 +42,15 @@ filterwarnings = [
    "ignore:.+may lead to deadlocks in the child:DeprecationWarning",
 ]
 
-[tool.poetry.plugins.pipen_cli]
-cli-gbatch = "pipen_cli_gbatch:CliGbatchPlugin"
+[tool.setuptools]
+include-package-data = true
 
+[tool.setuptools.packages.find]
+include = ["pipen_cli_gbatch*"]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"
-pytest-cov = "^6.2.1"
-pytest-asyncio = "^1.1.0"
-pytest-xdist = "^3.8.0"
-pytest-forked = "^1.6.0"
-backports-asyncio-runner = {version = "^1.1.0", python = "<3.11"}
+[tool.setuptools.package-data]
+pipen_cli_gbatch = ["daemon_args.toml"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
