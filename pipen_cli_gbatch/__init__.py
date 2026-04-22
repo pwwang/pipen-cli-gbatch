@@ -60,6 +60,7 @@ command will always be executed when the pipeline is run.
 """
 
 from __future__ import annotations
+from typing import Sequence
 
 import sys
 import asyncio
@@ -71,8 +72,9 @@ from diot import Diot
 from argx import Namespace
 from panpath import PanPath, GSPath
 from simpleconf import Config, ProfileConfig
+from rich.logging import RichHandler
 from xqute import Xqute, plugin
-from xqute.utils import logger, RichHandler
+from xqute.utils import logger
 from pipen import __version__ as pipen_version
 from pipen.defaults import CONFIG_FILES
 from pipen.cli import AsyncCLIPlugin
@@ -268,7 +270,7 @@ class CliGbatchDaemon:
             self._replace_arg_in_command("workdir", f"{MOUNTED_CWD}/.pipen")
         else:
             # If command workdir is different from config workdir, we need to mount it
-            self._add_mount(workdir, GbatchScheduler.MOUNTED_METADIR)
+            self._add_mount(workdir, GbatchScheduler.MOUNTED_METADIR)  # type: ignore
 
             # replace --workdir value with the mounted workdir in the command
             self._replace_arg_in_command("workdir", GbatchScheduler.MOUNTED_METADIR)
@@ -353,7 +355,7 @@ class CliGbatchDaemon:
         Returns:
             Configured Xqute instance with appropriate plugins and scheduler options.
         """
-        plugins = ["-xqute.pipen"]
+        plugins: list = ["-xqute.pipen"]
         if (
             not self.config.nowait
             and not self.config.view_logs
@@ -480,13 +482,13 @@ class CliGbatchDaemon:
         try:
             job = await xqute.scheduler.create_job(0, self.command, envs=self.envs)
             jid = await job.get_jid()
-            if await xqute.scheduler.job_is_running(job):
+            if await xqute.scheduler.job_is_running(job):  # pragma: no cover
                 logger.info(f"Job is already submited or running: {jid}")
                 logger.info("")
                 logger.info("To cancel the job, run:")
                 logger.info(
                     "> gcloud batch jobs cancel "
-                    f"--location {xqute.scheduler.location} {jid}"
+                    f"--location {xqute.scheduler.location} {jid}"  # type: ignore
                 )
             else:
                 await xqute.scheduler.submit_job_and_update_status(job)
@@ -496,7 +498,7 @@ class CliGbatchDaemon:
             logger.info("To check the job status, run:")
             logger.info(
                 "💻> gcloud batch jobs describe"
-                f" --location {xqute.scheduler.location} {jid}"
+                f" --location {xqute.scheduler.location} {jid}"  # type: ignore
             )
             logger.info("")
             logger.info("To pull the logs from both stdout and stderr, run:")
@@ -587,9 +589,9 @@ class CliGbatchDaemon:
         """
         logger.addHandler(RichHandler(show_path=False, show_time=False))
         # logger.addFilter(DuplicateFilter())
-        logger.setLevel(self.config.loglevel.upper())
+        logger.setLevel(self.config.get("loglevel", "INFO").upper())
 
-        if not self.config.plain:
+        if not self.config.get("plain", False):
             await self._infer_name()
             await self._handle_workdir()
             await self._handle_outdir()
@@ -598,7 +600,7 @@ class CliGbatchDaemon:
             if "name" not in self.config or not self.config.name:
                 self.config["name"] = "PipenCliGbatchDaemon"
 
-            if not self.config.workdir and self.mount_as_cwd:
+            if not self.config.get("workdir") and self.mount_as_cwd:
                 self.config.workdir = f"{self.mount_as_cwd}/.pipen"
 
             if not self.config.workdir or not isinstance(
@@ -681,20 +683,20 @@ class XquteCliGbatchPlugin:  # pragma: no cover
         """
         logger.info("Job is picked up by Google Batch, pulling stdout/stderr ...")
         if not self.stdout_file:
-            self.stdout_populator.logfile = scheduler.workdir.joinpath(
+            self.stdout_populator.logfile = scheduler.workdir.joinpath(  # type: ignore
                 "0", "job.stdout"
             )
-        elif not await self.stdout_file.a_exists():
+        elif not await self.stdout_file.a_exists():  # type: ignore
             logger.warning(f"Running logs file not found: {self.stdout_file}")
             logger.warning("  Waiting for it to be created ...")
             i = 0
-            while not await self.stdout_file.a_exists():
+            while not await self.stdout_file.a_exists():  # type: ignore
                 await asyncio.sleep(3)
                 i += 1
                 if i >= 20:
                     break
 
-            if not await self.stdout_file.a_exists():
+            if not await self.stdout_file.a_exists():  # type: ignore
                 logger.warning(
                     "  Still not found, "
                     "falling back to pull stdout/stderr from daemon ..."
@@ -705,24 +707,27 @@ class XquteCliGbatchPlugin:  # pragma: no cover
                 logger.warning(
                     "  Or use --plain if you are not running a pipen pipeline."
                 )
-                self.stdout_populator.logfile = scheduler.workdir.joinpath(
-                    "0", "job.stdout"
+                self.stdout_populator.logfile = (  # type: ignore
+                    scheduler.workdir.joinpath("0", "job.stdout")
                 )
             else:
                 logger.info("  Found the running logs, pulling ...")
-                self.stdout_populator.logfile = (
-                    await self.stdout_file.a_resolve()
-                    if await self.stdout_file.a_is_symlink()
+                self.stdout_populator.logfile = (  # type: ignore
+                    await self.stdout_file.a_resolve()  # type: ignore
+                    if await self.stdout_file.a_is_symlink()  # type: ignore
                     else self.stdout_file
                 )
         else:
-            self.stdout_populator.logfile = (
-                await self.stdout_file.a_resolve()
-                if await self.stdout_file.a_is_symlink()
+            self.stdout_populator.logfile = (  # type: ignore
+                await self.stdout_file.a_resolve()  # type: ignore
+                if await self.stdout_file.a_is_symlink()  # type: ignore
                 else self.stdout_file
             )
 
-        self.stderr_populator.logfile = scheduler.workdir.joinpath("0", "job.stderr")
+        self.stderr_populator.logfile = scheduler.workdir.joinpath(  # type: ignore
+            "0",
+            "job.stderr",
+        )
 
     @plugin.impl
     async def on_job_polling(self, scheduler, job, counter):
@@ -738,8 +743,8 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             return
 
         if self.stderr_populator:
-            stdout_lines = await self.stdout_populator.populate()
-            self.stdout_populator.increment_counter(len(stdout_lines))
+            stdout_lines = await self.stdout_populator.populate()  # type: ignore
+            self.stdout_populator.increment_counter(len(stdout_lines))  # type: ignore
             for line in stdout_lines:
                 logger.info(f"/STDOUT {line}")
 
@@ -817,12 +822,12 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
     """
 
     __version__ = __version__
-    name = "gbatch"
+    name = "gbatch"  # type: ignore
 
     @classmethod
     async def _get_defaults_from_config(
         cls,
-        config_files: list[str],
+        config_files: Sequence[str | Path],
         profile: str | None,
     ) -> dict:
         """Get the default configurations from the given config files and profile.
@@ -854,7 +859,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
             subparser: The subparser for this specific command.
         """
         super().__init__(parser, subparser)
-        subparser.pre_parse = _pre_parse
+        subparser.pre_parse = _pre_parse  # type: ignore
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
   \u200b
