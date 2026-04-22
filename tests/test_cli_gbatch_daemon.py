@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 # import signal
 # import asyncio
+import re
 from unittest.mock import patch
 from panpath import PanPath
 from argx import Namespace
@@ -14,7 +15,7 @@ from pipen_cli_gbatch import (
     __version__ as gbatch_version,
 )
 from .mock.mocks import mock_isinstance, MockXquteGbatchScheduler
-# from .conftest import MOCK_MOUNTS_DIR
+from .conftest import MOCK_MOUNTS_DIR
 
 
 def test_init():
@@ -178,6 +179,7 @@ async def test_setup(tmp_path):
             "location": "us-central1",
             "gcloud": "/path/to/gcloud",
             "loglevel": "debug",
+            "mount": "gs://bucket/path/workdir1:/mnt/disks/workdir1",
         },
         ["cmd", "--arg1", "value1"],
     )
@@ -413,3 +415,79 @@ async def test_with_envs(mock_gcloud_path):
     assert "export ENV_VAR1=value1" in content
     assert "export ENV_VAR2=value2" in content
 
+
+async def test_error_mount_as_cwd_and_cwd():
+    with pytest.raises(ValueError):
+        CliGbatchDaemon(
+            {"mount_as_cwd": "gs://bucket/path", "cwd": "/some/path"},
+            ["cmd"],
+        )
+
+
+async def test_mount_as_cwd():
+    daemon = CliGbatchDaemon(
+        {"mount_as_cwd": "gs://bucket/path", "plain": True},
+        ["cmd", "--arg", "value", "--outdir", "path/to/outdir"],
+    )
+    await daemon.setup()
+    await daemon._infer_name()
+    await daemon._handle_workdir()
+    await daemon._handle_outdir()
+    assert daemon.mount_as_cwd == "gs://bucket/path"
+    assert daemon.config.cwd == "/mnt/disks/.cwd"
+    assert daemon.config.mount == [
+        "gs://bucket/path:/mnt/disks/.cwd",
+        "gs://bucket/path/.pipen:/mnt/disks/pipen-pipeline/workdir",
+    ]
+    assert "--arg" in daemon.command
+    assert "value" in daemon.command
+    assert "--outdir" in daemon.command
+    assert "/mnt/disks/.cwd/path/to/outdir" in daemon.command
+
+
+async def test_mount_as_cwd_with_name():
+    daemon = CliGbatchDaemon(
+        {"mount_as_cwd": "gs://bucket/path"},
+        ["cmd", "--arg", "value", "--name", "MyJob"],
+    )
+    await daemon._infer_name()
+    await daemon._handle_workdir()
+    await daemon._handle_outdir()
+    assert daemon.mount_as_cwd == "gs://bucket/path"
+    assert daemon.config.cwd == "/mnt/disks/.cwd"
+    assert daemon.config.mount == ["gs://bucket/path:/mnt/disks/.cwd"]
+    assert "--arg" in daemon.command
+    assert "value" in daemon.command
+    assert "--outdir" in daemon.command
+    assert "/mnt/disks/.cwd/MyJob-output" in daemon.command
+
+
+async def test_name_32char_longer():
+    long_name = "a" * 40
+    daemon = CliGbatchDaemon(
+        {"mount_as_cwd": "gs://bucket/path"},
+        ["cmd", "--arg", "value", "--name", long_name],
+    )
+    await daemon._infer_name()
+    await daemon._handle_workdir()
+    await daemon._handle_outdir()
+    await daemon._infer_jobname_prefix()
+    assert daemon.mount_as_cwd == "gs://bucket/path"
+    assert daemon.config.cwd == "/mnt/disks/.cwd"
+    assert daemon.config.mount == ["gs://bucket/path:/mnt/disks/.cwd"]
+    assert "--arg" in daemon.command
+    assert "value" in daemon.command
+    assert "--outdir" in daemon.command
+    # Name should be truncated to 32 chars
+    assert re.match(
+        r"aaaaaaaaaaaaaaaaaaaaaaaaa-.{6}-gbatch-daemon",
+        daemon.config.jobname_prefix,
+    )
+
+
+async def test_show_versions(caplog):
+    daemon = CliGbatchDaemon({}, ["cmd"])
+    daemon._show_versions()
+
+    assert f"pipen-cli-gbatch version: v{gbatch_version}" in caplog.text
+    assert f"pipen version: v{pipen_version}" in caplog.text
