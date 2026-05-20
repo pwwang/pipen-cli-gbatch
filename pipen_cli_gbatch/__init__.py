@@ -507,13 +507,13 @@ class CliGbatchDaemon:
                 f" --name {self.config['name']}"
                 f" --workdir {self.config['workdir']}"
             )
-            logger.info("To pull the logs from both stdout, run:")
+            logger.info("To pull the logs from stdout only, run:")
             logger.info(
                 f"💻> pipen gbatch --view-logs stdout"
                 f" --name {self.config['name']}"
                 f" --workdir {self.config['workdir']}"
             )
-            logger.info("To pull the logs from both stderr, run:")
+            logger.info("To pull the logs from stderr only, run:")
             logger.info(
                 f"💻> pipen gbatch --view-logs stderr"
                 f" --name {self.config['name']}"
