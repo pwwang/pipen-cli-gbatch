@@ -815,10 +815,6 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
     This CLI plugin provides a command-line interface for executing arbitrary
     commands on Google Cloud Batch through the pipen framework. It wraps
     commands as single-process pipelines and provides various execution modes.
-
-    Attributes:
-        __version__ (str): The version of the plugin.
-        name (str): The CLI command name.
     """
 
     __version__ = __version__
@@ -859,6 +855,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
             subparser: The subparser for this specific command.
         """
         super().__init__(parser, subparser)
+        subparser.usage = "pipen gbatch [options] -- <command>"
         subparser.pre_parse = _pre_parse  # type: ignore
         subparser.epilog = """\033[1;4mExamples\033[0m:
 
