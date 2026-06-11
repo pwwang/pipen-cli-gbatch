@@ -916,6 +916,11 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
         """
         # Check if there is any unknown args
         known_parsed = await super().parse_args(known_parsed, unparsed_argv)
+        # pipen gbatch with no arguments
+        if not hasattr(known_parsed, "command"):
+            self.parser.print_help()
+            sys.exit(0)
+
         if known_parsed.command:
             if known_parsed.command[0] != "--":
                 _error_and_exit("The command to run must be after '--'.")
