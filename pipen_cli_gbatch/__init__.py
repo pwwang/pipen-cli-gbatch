@@ -918,7 +918,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
         known_parsed = await super().parse_args(known_parsed, unparsed_argv)
         # pipen gbatch with no arguments
         if not hasattr(known_parsed, "command"):
-            self.parser.print_help()
+            self.subparser.print_help()
             sys.exit(0)
 
         if known_parsed.command:
