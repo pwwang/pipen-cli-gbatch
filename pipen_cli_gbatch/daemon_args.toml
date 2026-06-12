@@ -213,6 +213,12 @@ action = "clear_append"
 help = "The strings of labels to add to the job (key=value). Refer to https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#Job.FIELDS.labels for details."
 
 [[groups.arguments]]
+flags = ["--timeout"]
+type = "int"
+default = 0
+help = "Maximum seconds to wait for the job to finish. Job will be killed if it runs longer than this. 0 means no timeout."
+
+[[groups.arguments]]
 flags = ["--gcloud"]
 type = "str"
 default = "gcloud"
