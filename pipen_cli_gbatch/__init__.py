@@ -861,30 +861,31 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
 
   \u200b
   # Run a command and wait for it to complete
-  > pipen gbatch --workdir gs://my-bucket/workdir -- \\
-    python myscript.py --input input.txt --output output.txt
+  > pipen gbatch --mount-as-cwd gs://my-bucket/workdir -- \\
+      python myscript.py --input input.txt --output output.txt
 
   \u200b
   # Use named mounts
-  > pipen gbatch --workdir gs://my-bucket/workdir --mount INFILE=gs://bucket/path/to/file \\
-    --mount OUTDIR=gs://bucket/path/to/outdir -- \\
-    bash -c 'cat $INFILE > $OUTDIR/output.txt'
+  > pipen gbatch --mount-as-cwd  gs://my-bucket/workdir \\
+      --mount INFILE=gs://bucket/path/to/file \\
+      --mount OUTDIR=gs://bucket/path/to/outdir -- \\
+      bash -c 'cat $INFILE > $OUTDIR/output.txt'
 
   \u200b
   # Run a command in a detached mode
   > pipen gbatch --nowait --project $PROJECT --location $LOCATION \\
-    --workdir gs://my-bucket/workdir -- \\
-    python myscript.py --input input.txt --output output.txt
+      --workdir gs://my-bucket/workdir -- \\
+      python myscript.py --input input.txt --output output.txt
 
   \u200b
   # If you have a profile defined in ~/.pipen.toml or ./.pipen.toml
   > pipen gbatch --profile myprofile -- \\
-    python myscript.py --input input.txt --output output.txt
+      python myscript.py --input input.txt --output output.txt
 
   \u200b
   # View the logs of a previously run command
   > pipen gbatch --view-logs all --name my-daemon-name \\
-    --workdir gs://my-bucket/workdir
+      --workdir gs://my-bucket/workdir
         """  # noqa: E501
 
     async def post_init(self):
