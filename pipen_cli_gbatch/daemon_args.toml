@@ -183,7 +183,10 @@ flags = ["--commands"]
 # type = "list"
 default = []
 action = "clear_append"
-help = "The list of commands to run in the container, each as a separate string."
+help = """
+The list of extra commands to run in the container, each as a separate string,
+before the actual command. This is helpful to setup the environment for
+the actual command."""
 
 [[groups.arguments]]
 flags = ["--runnables"]
