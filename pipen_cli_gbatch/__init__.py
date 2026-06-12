@@ -888,10 +888,9 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
       --workdir gs://my-bucket/workdir
         """  # noqa: E501
 
-    async def post_init(self):
         """Add command-line arguments specific to the gbatch plugin."""
         argfile = PanPath(__file__).parent / "daemon_args.toml"
-        args_def = await Config.a_load(argfile, loader="toml")
+        args_def = Config.load(argfile, loader="toml")
         mutually_exclusive_groups = args_def.get("mutually_exclusive_groups", [])
         groups = args_def.get("groups", [])
         arguments = args_def.get("arguments", [])
