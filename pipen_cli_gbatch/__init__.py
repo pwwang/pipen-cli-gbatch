@@ -492,6 +492,8 @@ class CliGbatchDaemon:
                 )
             else:
                 await xqute.scheduler.submit_job_and_update_status(job)
+                if jid is None:
+                    jid = await job.get_jid()
                 logger.info(f"Job is running in a detached mode: {jid}")
 
             logger.info("")
