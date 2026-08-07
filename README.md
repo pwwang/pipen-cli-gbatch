@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="./logo.png" width="260px" alt="pipen-cli-gbatch logo">
+    <img src="./logo.png" width="260px" alt="pipen-cli-gbatch logo" />
 
    <p style="font-weight:bold;">A pipen CLI plugin to run commands via Google Cloud Batch.</p>
 
