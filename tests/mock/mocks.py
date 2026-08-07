@@ -5,10 +5,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Sequence
 
+from panpath import PanPath
 from pipen.scheduler import XquteGbatchScheduler
+from xqute.defaults import DEFAULT_WORKDIR_NAME
 from xqute.path import SpecPath
 from xqute.schedulers.gbatch_scheduler import (
-    DEFAULT_MOUNTED_ROOT,
     JOBNAME_PREFIX_RE,
     NAMED_MOUNT_RE,
     Scheduler,
@@ -51,7 +52,10 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
         *args,
         project: str,
         location: str,
+        volumes: str | Sequence[str] | None = None,
         mount: str | Sequence[str] | None = None,
+        volume_as_cwd: str | None = None,
+        mount_as_cwd: str | None = None,
         service_account: str | None = None,
         network: str | None = None,
         subnetwork: str | None = None,
@@ -59,16 +63,69 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
         machine_type: str | None = None,
         provisioning_model: str | None = None,
         image_uri: str | None = None,
-        entrypoint: str = None,
+        entrypoint: str | None = None,
         commands: str | Sequence[str] | None = None,
         runnables: Sequence[dict] | None = None,
         **kwargs,
     ):
         """Construct the gbatch scheduler"""
+
+        if mount and volumes:
+            raise ValueError(
+                "You can't specify both 'mount' and 'volumes' arguments. "
+                "Use only one of them."
+            )
+
+        if mount_as_cwd and volume_as_cwd:
+            raise ValueError(
+                "You can't specify both 'mount_as_cwd' and 'volume_as_cwd' arguments. "
+                "Use only one of them."
+            )
+
+        mount = mount or volumes
+        mount_as_cwd = mount_as_cwd or volume_as_cwd
+
         self.gcloud = kwargs.pop("gcloud", "gcloud")
         self.project = project
         self.location = location
-        kwargs.setdefault("mounted_workdir", f"{DEFAULT_MOUNTED_ROOT}/xqute_workdir")
+
+        if mount_as_cwd and not mount_as_cwd.startswith("gs://"):
+            raise ValueError(
+                "'mount_as_cwd' should be a GCS path starting with 'gs://', "
+                f"got '{mount_as_cwd}'."
+            )
+
+        if mount_as_cwd and kwargs.get("cwd"):
+            raise ValueError(
+                "'mount_as_cwd' and 'cwd' cannot be specified at the same time."
+            )
+
+        if kwargs.get("workdir"):
+            workdir_path = PanPath(kwargs["workdir"])
+        else:
+            workdir_path = Path(DEFAULT_WORKDIR_NAME)
+
+        if mount_as_cwd:
+            kwargs["cwd"] = f"{self.DEFAULT_MOUNTED_ROOT}/.cwd"
+
+            workdir_mount_needed = workdir_path.is_absolute()
+            if not workdir_mount_needed:
+                kwargs["workdir"] = f"{mount_as_cwd}/{workdir_path}"
+                kwargs.setdefault("mounted_workdir", f"{kwargs['cwd']}/{workdir_path}")
+
+                # If mounted_workdir is set, and it is not under cwd,
+                # we need to mount the workdir as well
+                if not Path(kwargs["mounted_workdir"]).is_relative_to(kwargs["cwd"]):
+                    workdir_mount_needed = True
+        else:
+            workdir_mount_needed = True
+
+        if workdir_mount_needed:
+            kwargs.setdefault(
+                "mounted_workdir",
+                f"{self.DEFAULT_MOUNTED_ROOT}/{DEFAULT_WORKDIR_NAME}",
+            )
+
         Scheduler.__init__(self, *args, **kwargs)
 
         if not isinstance(self.workdir, GSPath):
@@ -79,7 +136,7 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
         if not JOBNAME_PREFIX_RE.match(self.jobname_prefix):
             raise ValueError(
                 "'jobname_prefix' for gbatch scheduler doesn't follow pattern "
-                "^[a-zA-Z][a-zA-Z0-9-]{0,47}$."
+                f"'^[a-zA-Z][a-zA-Z0-9-]{{0,47}}$', got '{self.jobname_prefix}'."
             )
 
         self._path_envs = {}
@@ -152,7 +209,7 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
         logs_policy = self.config.setdefault("logsPolicy", {})
         logs_policy.setdefault("destination", "CLOUD_LOGGING")
 
-        volumes = task_spec.setdefault("volumes", [])
+        volumes: list[dict] = task_spec.setdefault("volumes", [])
         if not isinstance(volumes, list):
             raise ValueError(
                 "'taskGroups[0].taskSpec.volumes' should be a list for "
@@ -170,20 +227,31 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
                 link_path.unlink()
             link_path.symlink_to(source_path)
 
-        volumes.insert(
-            0,
-            {
-                "gcs": {"remotePath": str(self.workdir)},
-                "mountPath": str(self.workdir.mounted),
-            },
-        )
+        if workdir_mount_needed:
+            volumes.insert(
+                0,
+                {
+                    "gcs": {"remotePath": str(self.workdir)},
+                    "mountPath": str(self.workdir.mounted),
+                },
+            )
+
+        if mount_as_cwd:
+            # Mount the specified GCS path as the working directory
+            volumes.insert(
+                0,
+                {
+                    "gcs": {"remotePath": f"{MOCK_MOUNTS_DIR}/{mount_as_cwd[5:]}"},
+                    "mountPath": str(f"{self.DEFAULT_MOUNTED_ROOT}/.cwd"),
+                },
+            )
 
         if mount and not isinstance(mount, (tuple, list)):
             mount = [mount]
         if mount:
             for m in mount:
                 # Let's check if mount is provided as "OUTDIR=gs://bucket/dir"
-                # If so, we mounted it to $DEFAULT_MOUNTED_ROOT/OUTDIR
+                # If so, we mounted it to $DEFAULT_MOUNTED_ROOT/NAMED_MOUNTS/OUTDIR
                 # and set OUTDIR env variable to the mounted path in self._path_envs
                 if NAMED_MOUNT_RE.match(m):
                     name, gcs = m.split("=", 1)
@@ -200,12 +268,15 @@ class MockXquteGbatchScheduler(XquteGbatchScheduler):
                         # Mount the parent directory
                         # gcs = str(gcs_path.parent._no_prefix)
                         mount_path = (
-                            f"{DEFAULT_MOUNTED_ROOT}/{name}/{gcs_path.parent.name}"
+                            f"{self.DEFAULT_MOUNTED_ROOT}/NAMED_MOUNTS/"
+                            f"{name}/{gcs_path.parent.name}"
                         )
                         self._path_envs[name] = f"{mount_path}/{gcs_path.name}"
                     else:
                         # gcs = gcs[5:]
-                        mount_path = f"{DEFAULT_MOUNTED_ROOT}/{name}"
+                        mount_path = (
+                            f"{self.DEFAULT_MOUNTED_ROOT}/NAMED_MOUNTS/{name}"
+                        )
                         self._path_envs[name] = mount_path
 
                     volumes.append(

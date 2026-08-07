@@ -13,6 +13,9 @@ dependencies = [
    "panpath[async-gs]>=0.4.9,<0.5",
 ]
 
+[tool.uv]
+prerelease = "allow"
+
 [tool.hatch.version]
 path = "pipen_cli_gbatch/__init__.py"
 

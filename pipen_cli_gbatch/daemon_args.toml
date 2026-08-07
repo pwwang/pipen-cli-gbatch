@@ -60,8 +60,9 @@ type = "str"
 help = """The directory to mount as the current working directory of the command.
 This is a shortcut for `--mount <cloudpath>:/mnt/disks/.cwd --cwd /mnt/disks/.cwd`.
 The <cloudpath> must be a Google Storage Bucket path (gs://...). When this option is used,
-and `--workdir` is not provided, the workdir will be set to `<cloudpath>/.pipen/<command_name>`,
-where <command_name> is the name of the command (or the value of `--name` if provided).
+and `--workdir` is not provided, the workdir will be a relative path (`.pipen`), which is
+resolved against the mounted cloud path (i.e. `<cloudpath>/.pipen`). Relative paths in the
+command (e.g. `--outdir path/to/dir`) will also be resolved against the mounted cloud path.
 """
 
 [[groups.arguments]]
