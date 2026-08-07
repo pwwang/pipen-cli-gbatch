@@ -1,6 +1,9 @@
-# pipen-cli-gbatch
+<div align="center">
+    <img src="./logo.png" width="260px" alt="pipen-cli-gbatch logo">
 
-A pipen CLI plugin to run commands via Google Cloud Batch.
+   <p style="font-weight:bold;">A pipen CLI plugin to run commands via Google Cloud Batch.</p>
+
+</div>
 
 The idea is to submit the command using xqute and use the gbatch scheduler to run it on Google Cloud Batch.
 
