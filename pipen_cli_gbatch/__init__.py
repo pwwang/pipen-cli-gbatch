@@ -62,6 +62,7 @@ command will always be executed when the pipeline is run.
 from __future__ import annotations
 from typing import Sequence
 
+import re
 import sys
 import asyncio
 import hashlib
@@ -355,10 +356,11 @@ class CliGbatchDaemon:
         if not prefix:
             command_name = await self.command_name()
             # The max length of job name in gbatch is 48 characters
-            command_name = command_name.lower().replace("_", "-")
+            command_name = command_name.lower()
             if len(command_name) > 32:
                 hsh = hashlib.sha1(command_name.encode()).hexdigest()[:6]
                 command_name = f"{command_name[:25]}-{hsh}"
+            command_name = re.sub(r"[^a-z0-9-]", "-", command_name)
             prefix = f"{command_name}-gbatch-daemon"
 
         self.config["jobname_prefix"] = prefix
