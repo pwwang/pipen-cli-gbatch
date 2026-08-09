@@ -464,7 +464,8 @@ class CliGbatchDaemon:
             return
 
         if not self.config.plain:
-            log_file = PanPath(f"{self._command_workdir}/run-latest.log")
+            cmd_name = await self.command_name()
+            log_file = PanPath(f"{self._command_workdir}/{cmd_name}/run-latest.log")
             if await log_file.a_exists():
                 await log_file.a_unlink()
 
