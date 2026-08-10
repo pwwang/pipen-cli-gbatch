@@ -64,6 +64,7 @@ from typing import Sequence
 
 import re
 import sys
+import json
 import asyncio
 import hashlib
 from contextlib import suppress
@@ -126,8 +127,10 @@ class CliGbatchDaemon:
         Args:
             config: Configuration dictionary or Namespace containing daemon settings.
                 Must include 'workdir' pointing to a Google Storage bucket path.
+                Other options not recognized by the parser are stored in `_other_opts`.
             command: List of command arguments to execute.
         """
+        self.other_opts: dict = getattr(config, "_other_opts", {})
         if isinstance(config, Namespace):
             self.config = Diot(vars(config))
         else:
@@ -149,15 +152,27 @@ class CliGbatchDaemon:
         self._command_workdir: PanPath | None = None
         # envs sent to the command, can be used in the future to pass some information
         # to the command without using command line arguments
-        self._envs: dict = {}
+        self.envs: dict = {}
+        # Convert other_opts to envs, so that the command can access them
+        # as environment variables
+        for key, val in self.other_opts.items():
+            if isinstance(val, bool):
+                val = f"@bool:{val}"
+            elif isinstance(val, int):
+                val = f"@int:{val}"
+            elif isinstance(val, float):
+                val = f"@float:{val}"
+            elif val is None:
+                val = "@none"
+            elif isinstance(val, (list, tuple)):
+                val = list(val)
+                val = f"@json:{json.dumps(val)}"
+            elif isinstance(val, dict):
+                val = f"@json:{json.dumps(val)}"
+            else:
+                val = str(val)
 
-    @property
-    def envs(self) -> dict:
-        return self._envs
-
-    @envs.setter
-    def envs(self, value: dict):
-        self._envs = value
+            self.envs[f"PIPEN_{key}"] = val
 
     @property
     def daemon_name(self) -> str:
@@ -855,7 +870,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
         )
         conf = ProfileConfig.use_profile(conf, profile, allow_missing_base=True)
         conf = ProfileConfig.detach(conf)
-        return conf.get("scheduler_opts", {})
+        return conf
 
     def __init__(self, parser, subparser):
         """Initialize the CLI plugin with argument parsing configuration.
@@ -938,6 +953,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
             CONFIG_FILES,
             known_parsed.profile,
         )
+        default_scheduler_opts = defaults.pop("scheduler_opts", {})
 
         def is_valid(val: Any) -> bool:
             """Check if a value is valid (not None, not empty string, not empty list).
@@ -949,7 +965,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
             return bool(val)
 
         # update parsed with the defaults
-        for key, val in defaults.items():
+        for key, val in default_scheduler_opts.items():
             if key == "mount" and val and getattr(known_parsed, key, None):
                 if not isinstance(val, (tuple, list)):
                     val = [val]
@@ -969,6 +985,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
 
             setattr(known_parsed, key, val)
 
+        setattr(known_parsed, "_other_opts", defaults)
         return known_parsed
 
     async def exec_command(self, args: Namespace) -> None:

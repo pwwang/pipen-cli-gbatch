@@ -204,6 +204,41 @@ async def test_setup(tmp_path):
     assert "value1" in daemon.command
 
 
+async def test_other_opts_to_envs():
+    options = Namespace(
+        workdir="gs://bucket/path/workdir",
+        project="my-gcp-project",
+        location="us-central1",
+        gcloud="/path/to/gcloud",
+        loglevel="debug",
+    )
+    setattr(
+        options,
+        "_other_opts",
+        {
+            "custom_option1": "value1",
+            "custom_option2": 42,
+            "custom_option3": 3.14,
+            "custom_option4": {"key": "value"},
+            "custom_option5": [1, 2, 3],
+            "custom_option6": True,
+            "custom_option7": None,
+        }
+    )
+    daemon = CliGbatchDaemon(
+        options,
+        ["cmd", "--arg1", "value1"],
+    )
+
+    assert daemon.envs["PIPEN_custom_option1"] == "value1"
+    assert daemon.envs["PIPEN_custom_option2"] == "@int:42"
+    assert daemon.envs["PIPEN_custom_option3"] == "@float:3.14"
+    assert daemon.envs["PIPEN_custom_option4"] == "@json:{\"key\": \"value\"}"
+    assert daemon.envs["PIPEN_custom_option5"] == "@json:[1, 2, 3]"
+    assert daemon.envs["PIPEN_custom_option6"] == "@bool:True"
+    assert daemon.envs["PIPEN_custom_option7"] == "@none"
+
+
 async def test_setup_plain_no_workdir():
     daemon = CliGbatchDaemon(
         {
