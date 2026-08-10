@@ -216,6 +216,7 @@ async def test_other_opts_to_envs():
         options,
         "_other_opts",
         {
+            "scheduler": "gbatch",
             "custom_option1": "value1",
             "custom_option2": 42,
             "custom_option3": 3.14,

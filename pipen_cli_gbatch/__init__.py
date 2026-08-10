@@ -130,8 +130,12 @@ class CliGbatchDaemon:
                 Other options not recognized by the parser are stored in `_other_opts`.
             command: List of command arguments to execute.
         """
-        self.other_opts: dict = getattr(config, "_other_opts", {})
+        other_opts: dict = {}
         if isinstance(config, Namespace):
+            if hasattr(config, "_other_opts"):
+                other_opts = config._other_opts or {}
+                delattr(config, "_other_opts")
+
             self.config = Diot(vars(config))
         else:
             self.config = Diot(config)
@@ -155,7 +159,12 @@ class CliGbatchDaemon:
         self.envs: dict = {}
         # Convert other_opts to envs, so that the command can access them
         # as environment variables
-        for key, val in self.other_opts.items():
+        for key, val in other_opts.items():
+            if key in ("scheduler", "workdir", "outdir"):
+                # scheduler for command should be local in the Gbatch VM
+                # workdir/outdir is handled by the daemon
+                continue
+
             if isinstance(val, bool):
                 val = f"@bool:{val}"
             elif isinstance(val, int):
@@ -904,6 +913,8 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
 
   \u200b
   # If you have a profile defined in ~/.pipen.toml or ./.pipen.toml
+  # `scheduler_opts` in the profile will be used to start the daemon,
+  # other options will be brought as default to the pipen pipeline by the command
   > pipen gbatch --profile myprofile -- \\
       python myscript.py --input input.txt --output output.txt
 
