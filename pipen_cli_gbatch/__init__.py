@@ -1138,7 +1138,8 @@ class CliGbatchPlugin(AsyncCLIPlugin):
 
             setattr(known_parsed, key, val)
 
-        setattr(known_parsed, "_other_opts", defaults)
+        if not known_parsed.plain:
+            setattr(known_parsed, "_other_opts", defaults)
         return known_parsed
 
     async def exec_command(self, args: Namespace) -> None:
