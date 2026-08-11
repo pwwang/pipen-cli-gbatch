@@ -259,7 +259,7 @@ class CliGbatchDaemonMixin:
                     "plain",
                 )
             },
-            workdir=(f'{self.config.get("workdir")}/{self.daemon_name}'),
+            workdir=f'{self.config.get("workdir")}/{self.daemon_name}',
             plugins=plugins,
         )
 
@@ -803,6 +803,7 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
         stdout_file = self.command_workdir / "run-latest.log"
         self._show_versions()
         self._show_scheduler_opts()
+        logger.info(f"Daemon workdir: {self.config.get('workdir')}/{self.daemon_name}")
         if self.config.get("nowait"):
             await self._run_nowait(stdout_file=stdout_file)
         elif self.config.get("view_logs"):
