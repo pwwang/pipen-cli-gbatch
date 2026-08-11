@@ -86,7 +86,7 @@ from pipen.scheduler import GbatchScheduler
 from pipen_poplog import LogsPopulator
 from pipen_args.parser_ import _pre_parse
 
-__version__ = "1.2.0a5"
+__version__ = "1.2.0a6"
 __all__ = ("CliGbatchPlugin", "CliGbatchDaemonPlain", "CliGbatchDaemonPipeline")
 
 
