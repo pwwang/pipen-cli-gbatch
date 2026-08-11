@@ -769,7 +769,7 @@ async def test_handle_workdir_plain_absolute_non_gs(tmp_path):
 async def test_jobname_prefix_plain_truncated():
     daemon = CliGbatchDaemonPlain({}, ["a" * 40, "b"])
     prefix = await daemon.jobname_prefix()
-    assert re.fullmatch(r"pipen-g-b-a-t-c-h(?:-a){12}-[0-9a-f]{6}", prefix)
+    assert re.fullmatch(r"pipen-gbatch-a{28}-[0-9a-f]{6}", prefix)
     assert len(prefix) == 48
 
 

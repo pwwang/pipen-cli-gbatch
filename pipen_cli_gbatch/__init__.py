@@ -555,7 +555,7 @@ class CliGbatchDaemonPlain(CliGbatchDaemonMixin):
         prefix = self.config.get("jobname_prefix", None)
 
         if not prefix:
-            prefix = slugify("-".join(self.daemon_name)).lstrip("-")
+            prefix = slugify(self.daemon_name).lstrip("-")
             if len(prefix) > 41:
                 hsh = hashlib.sha1(prefix.encode("utf-8")).hexdigest()[:6]
                 prefix = f"pipen-{prefix[:35]}-{hsh}"
@@ -772,11 +772,10 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
         if not prefix:
             command_name = await self.command_name()
             # The max length of job name in gbatch is 48 characters
-            command_name = command_name.lower()
+            command_name = slugify(command_name).lstrip("-")
             if len(command_name) > 34:
                 hsh = hashlib.sha1(command_name.encode()).hexdigest()[:6]
                 command_name = f"{command_name[:28]}-{hsh}"
-            command_name = re.sub(r"[^a-z0-9-]", "-", command_name)
             prefix = f"pipen-gbatch-{command_name}"
 
         if not re.compile(r"^[a-z0-9-]+$").match(prefix) or len(prefix) > 48:
@@ -1138,7 +1137,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):
 
             setattr(known_parsed, key, val)
 
-        if not known_parsed.plain:
+        if not getattr(known_parsed, "plain", None):
             setattr(known_parsed, "_other_opts", defaults)
         return known_parsed
 
