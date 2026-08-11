@@ -6,6 +6,7 @@ import re
 import hashlib
 import json
 from argparse import Namespace
+from pathlib import Path
 from slugify import slugify
 from panpath import PanPath, GSPath
 from pipen.scheduler import GbatchScheduler
@@ -367,6 +368,29 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
             )
 
         return prefix
+
+    async def _run_wait(self, stdout_file: Path | None = None):
+        """Run the pipeline and wait for completion.
+
+        Raises:
+            SystemExit: If no command is provided.
+        """
+        if not self.command:
+            error_and_exit("No command to run is provided.")
+
+        xqute = await self._get_xqute(stdout_file=stdout_file)
+        job = await xqute.scheduler.create_job(0, self.command, envs=self.envs)
+        if await xqute.scheduler.job_is_running(job):
+            await self._run_nowait(xqute)
+            return
+
+        command_workdir = await self.command_workdir()
+        log_file = command_workdir / "run-latest.log"
+        if await log_file.a_exists():
+            await log_file.a_unlink()
+
+        await xqute.feed(self.command, envs=self.envs)
+        await xqute.run_until_complete()
 
     async def run(self):
         """Execute the daemon pipeline based on configuration.
