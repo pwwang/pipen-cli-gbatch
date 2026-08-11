@@ -73,7 +73,7 @@ from pathlib import Path
 from typing import Any
 from diot import Diot
 from argx import Namespace
-from panpath import PanPath, GSPath
+from panpath import LocalPath, PanPath, GSPath
 from simpleconf import Config, ProfileConfig
 from slugify import slugify
 from rich.logging import RichHandler
@@ -122,6 +122,9 @@ class CliGbatchDaemonMixin:
         self.mount_as_cwd = (
             self.config.get("mount_as_cwd") or self.config.get("volume_as_cwd")
         )
+        if self.mount_as_cwd:
+            self.mount_as_cwd = PanPath(self.mount_as_cwd)
+
         self.config.prescript = self.config.get("prescript", None) or ""
         self.config.postscript = self.config.get("postscript", None) or ""
         if "labels" in self.config and isinstance(self.config.labels, list):
@@ -539,7 +542,7 @@ class CliGbatchDaemonPlain(CliGbatchDaemonMixin):
             )
 
         if self.mount_as_cwd:  # workdir is relative
-            workdir = PanPath(f"{self.mount_as_cwd}/{workdir}")
+            workdir = self.mount_as_cwd / workdir
 
         # xqute will handle the mounting
         self.config["workdir"] = workdir
@@ -603,6 +606,20 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
             delattr(config, "_other_opts")
 
         super().__init__(config, command)
+        self.cwd = self.config.get("cwd", None)
+        if self.cwd:
+            if self.mount_as_cwd:
+                _error_and_exit(
+                    "The 'cwd' option cannot be used when 'mount_as_cwd' is set "
+                    "for `pipen gbatch`."
+                )
+
+            self.cwd = PanPath(self.cwd)
+            if not isinstance(self.cwd, LocalPath):
+                _error_and_exit(
+                    "The 'cwd' option must be a local path from inside the VM, "
+                    "not a Google Storage path for `pipen gbatch`."
+                )
 
         # Convert other_opts to envs, so that the command can access them
         # as environment variables
@@ -663,7 +680,31 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
     def command_workdir(self) -> PanPath:
         """Get the workdir for the command"""
         if not self.config["workdir"].is_absolute():
-            return PanPath(self.mount_as_cwd) / self.config["workdir"]
+            if self.mount_as_cwd:
+                return self.mount_as_cwd / self.config["workdir"]
+            elif self.cwd:
+                # We need to get the cloud path, instead of the path in VM
+                # The only way is to parse the mounts
+                mount: str | list[str] = self.config.get("mount", None) or []
+                if not isinstance(mount, (list, tuple)):
+                    mount = [mount]
+
+                for mnt in mount:
+                    # if not, let xqute handle it
+                    if ":" in mnt:
+                        src, tgt = mnt.rpartition(":")[::2]
+                        if self.cwd.is_relative_to(tgt):
+                            src = PanPath(src)
+                            rel = self.cwd.relative_to(tgt)
+                            return src / rel / self.config["workdir"]
+                else:
+                    _error_and_exit(
+                        "Cannot determine the cloud path for the relative workdir "
+                        "from `cwd`. Please use `mount_as_cwd` or provide an absolute "
+                        "Google Storage Bucket path for --workdir "
+                        "or 'workdir' in configuration file for the pipeline."
+                    )
+
         return self.config["workdir"]
 
     async def command_name(self) -> str:
@@ -697,19 +738,23 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
             or xqute_defaults.DEFAULT_WORKDIR_NAME
         )
 
-        if not workdir.is_absolute() and not self.mount_as_cwd:
+        if not workdir.is_absolute() and not self.mount_as_cwd and not self.cwd:
             _error_and_exit(
-                "A Google Storage Bucket path is required for --workdir "
-                "or 'workdir' in configuration file."
+                "`mount_as_cwd` or `cwd` is required for relative workdir, "
+                "or a Google Storage Bucket path is required for --workdir or "
+                "'workdir' in configuration file for the pipeline."
             )
 
         if workdir.is_absolute() and not isinstance(workdir, GSPath):
             _error_and_exit(
                 "An existing Google Storage Bucket path is "
-                "required for --workdir or 'workdir' in configuration file."
+                "required for --workdir or 'workdir' in configuration file "
+                "for the pipeline."
             )
 
-        if self.mount_as_cwd:  # workdir is relative
+        if self.cwd:
+            mounted_workdir = f"{self.cwd}/{workdir}"
+        elif self.mount_as_cwd:  # workdir is relative
             mounted_workdir = f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/.cwd/{workdir}"
         else:
             mounted_workdir = (
@@ -735,19 +780,23 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
             command_outdir = f"{command_name}-output"
 
         command_outdir = PanPath(command_outdir)
-        if not command_outdir.is_absolute() and not self.mount_as_cwd:
+        if not command_outdir.is_absolute() and not self.mount_as_cwd and not self.cwd:
             _error_and_exit(
-                "A Google Storage Bucket path is required for --outdir "
-                "or 'outdir' in configuration file for the pipen pipeline."
+                "`mount_as_cwd` or `cwd` is required for relative outdir, "
+                "or a Google Storage Bucket path is required for --outdir or "
+                "'outdir' in configuration file for the pipeline."
             )
 
         if command_outdir.is_absolute() and not isinstance(command_outdir, GSPath):
             _error_and_exit(
                 "An existing Google Storage Bucket path is "
-                "required for --outdir or 'outdir' in configuration file."
+                "required for --outdir or 'outdir' in configuration file "
+                "for the pipeline."
             )
 
-        if not self.mount_as_cwd:
+        if self.cwd:
+            mounted_outdir = f"{self.cwd}/{command_outdir}"
+        elif not self.mount_as_cwd:
             mounted_outdir = (
                 f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/"
                 f"{xqute_defaults.DEFAULT_WORKDIR_NAME}-{command_name}-output"

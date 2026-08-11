@@ -410,6 +410,47 @@ async def test_error_mount_as_cwd_and_cwd():
         await daemon._get_xqute()
 
 
+async def test_error_mount_as_cwd_and_cwd_pipeline():
+    with pytest.raises(ValueError):
+        await CliGbatchDaemonPipeline(
+            {
+                "mount_as_cwd": "gs://bucket/path",
+                "cwd": "/some/path",
+                "project": "my-gcp-project",
+                "location": "us-central1",
+            },
+            ["cmd"],
+        )
+
+
+async def test_error_cwd_nonlocal_pipeline():
+    with pytest.raises(ValueError):
+        CliGbatchDaemonPipeline(
+            {
+                "cwd": "gs://some/path",
+                "project": "my-gcp-project",
+                "location": "us-central1",
+            },
+            ["cmd"],
+        )
+
+
+async def test_error_cwd_notfound_pipeline():
+    daemon = CliGbatchDaemonPipeline(
+        {
+            "mount": "gs://some/path:/mnt/disks/root",
+            "cwd": "/tmp",
+            "workdir": "workdir",
+            "project": "my-gcp-project",
+            "location": "us-central1",
+        },
+        ["cmd", "--name", "MyJob", "--outdir", "gs://bucket/path/outdir"],
+    )
+    await daemon.handle_workdir()
+    with pytest.raises(ValueError):
+        daemon.command_workdir
+
+
 async def test_mount_as_cwd():
     daemon = CliGbatchDaemonPlain(
         {"mount_as_cwd": "gs://bucket/path"},
@@ -419,7 +460,7 @@ async def test_mount_as_cwd():
     # no following for plain mode
     # await daemon._infer_name()
     # await daemon.handle_workdir()
-    assert daemon.mount_as_cwd == "gs://bucket/path"
+    assert str(daemon.mount_as_cwd) == "gs://bucket/path"
     assert "--arg" in daemon.command
     assert "value" in daemon.command
     assert "--outdir" in daemon.command
@@ -437,7 +478,7 @@ async def test_mount_as_cwd_with_name():
     )
     # await daemon._infer_name()
     await daemon.handle_workdir()
-    assert daemon.mount_as_cwd == "gs://bucket/path"
+    assert str(daemon.mount_as_cwd) == "gs://bucket/path"
     xqute = await daemon._get_xqute()
     assert xqute.scheduler.cwd == "/mnt/disks/.cwd"
     volumes = xqute.scheduler.config["taskGroups"][0]["taskSpec"]["volumes"]
@@ -489,7 +530,7 @@ async def test_name_32char_longer():
     # await daemon._infer_name()
     await daemon.handle_workdir()
     jobname_prefix = await daemon.jobname_prefix()
-    assert daemon.mount_as_cwd == "gs://bucket/path"
+    assert str(daemon.mount_as_cwd) == "gs://bucket/path"
     assert "mount" not in daemon.config
     assert "--arg" in daemon.command
     assert "value" in daemon.command
@@ -824,3 +865,25 @@ async def test_command_workdir():
     daemon = CliGbatchDaemonPipeline({}, ["cmd"])
     daemon.config["workdir"] = PanPath("gs://bucket/abs/workdir")
     assert str(daemon.command_workdir) == "gs://bucket/abs/workdir"
+
+
+async def test_command_workdir_cwd():
+    daemon = CliGbatchDaemonPipeline(
+        {"mount": "gs://bucket/cwd:/mnt/disks/root", "cwd": "/mnt/disks/root/workdir"},
+        ["cmd"],
+    )
+    daemon.config["workdir"] = PanPath("relative/workdir")
+    assert str(daemon.command_workdir) == "gs://bucket/cwd/workdir/relative/workdir"
+
+
+async def test_command_outdir_cwd():
+    daemon = CliGbatchDaemonPipeline(
+        {
+            "mount": "gs://bucket/cwd:/mnt/disks/root",
+            "cwd": "/mnt/disks/root/workdir",
+        },
+        ["cmd", "--name", "MyJob"],
+    )
+    await daemon.handle_workdir()
+    assert str(daemon.command_workdir) == "gs://bucket/cwd/workdir/.pipen/MyJob"
+    assert "/mnt/disks/root/workdir/MyJob-output" in daemon.command
