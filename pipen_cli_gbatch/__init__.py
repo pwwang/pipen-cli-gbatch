@@ -448,9 +448,9 @@ class CliGbatchDaemonMixin:
             for key, populator in poplulators.items():
                 if populator.residue:
                     if len(log_source) > 1:
-                        print(f"/{key} {populator.residue}")
+                        print(f"/{key} {populator.residue.decode()}")
                     else:
-                        print(populator.residue)
+                        print(populator.residue.decode())
             print("")
             logger.info("Stopped pulling logs.")
             sys.exit(0)
@@ -843,10 +843,10 @@ class XquteCliGbatchPlugin:
     def _clear_residues(self):
         """Clear any remaining log residues and display them."""
         if self.stdout_populator and self.stdout_populator.residue:
-            logger.info(f"/STDOUT {self.stdout_populator.residue}")
+            logger.info(f"/STDOUT {self.stdout_populator.residue.decode()}")
             self.stdout_populator.residue = ""
         if self.stderr_populator and self.stderr_populator.residue:
-            logger.error(f"/STDERR {self.stderr_populator.residue}")
+            logger.error(f"/STDERR {self.stderr_populator.residue.decode()}")
             self.stderr_populator.residue = ""
 
     @plugin.impl
@@ -918,7 +918,7 @@ class XquteCliGbatchPlugin:
             # Make it less frequent
             return
 
-        if self.stderr_populator:
+        if self.stdout_populator:
             stdout_lines = await self.stdout_populator.populate()  # type: ignore
             self.stdout_populator.increment_counter(len(stdout_lines))  # type: ignore
             for line in stdout_lines:

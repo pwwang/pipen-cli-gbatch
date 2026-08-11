@@ -4,7 +4,7 @@ import pytest
 # import signal
 # import asyncio
 import re
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from panpath import PanPath
 from argx import Namespace
 from pipen_cli_gbatch import (
@@ -255,77 +255,6 @@ async def test_setup_plain_no_workdir():
     with pytest.raises(ValueError):
         await daemon.setup()
 
-# Deadlock ...
-# async def test_view_logs(mock_gcloud_path, capsys):
-#     daemon = CliGbatchDaemonPipeline(
-#         {
-#             "nowait": False,
-#             "view_logs": True,
-#             "error_strategy": "halt",
-#             "num_retries": 0,
-#             "jobname_prefix": "test-view-logs",
-#             "workdir": "gs://bucket/path/workdir",
-#             "name": "TestViewLogsDaemon",
-#             "project": "my-gcp-project",
-#             "location": "us-central1",
-#             "gcloud": str(mock_gcloud_path),
-#             "loglevel": "info",
-#         },
-#         ["echo", "Hello, World!"],
-#     )
-#     with (
-#         # patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-#         # patch("pipen_cli_gbatch.isinstance", mock_isinstance),
-#         patch(
-#             "xqute.schedulers.gbatch_scheduler.GbatchScheduler",
-#             MockXquteGbatchScheduler,
-#         )
-#     ):
-#         await daemon._run_nowait()
-
-#     async def send_sigint():
-#         await asyncio.sleep(3)
-#         signal.raise_signal(signal.SIGINT)
-
-#     asyncio.create_task(send_sigint())
-#     daemon.config.view_logs = "all"
-#     # with patch("pipen_cli_gbatch.AnyPath", MockAnyPath):
-#     daemon.config.workdir = f"{MOCK_MOUNTS_DIR}/bucket/path/workdir"
-#     await daemon._run_view_logs()
-
-#     assert "/STDOUT Hello, World!" in capsys.readouterr().out
-
-
-# Causing deadlock
-# async def test_run_wait(mock_gcloud_path, caplog):
-#     daemon = CliGbatchDaemonPipeline(
-#         {
-#             "nowait": False,
-#             "view_logs": False,
-#             "error_strategy": "halt",
-#             "num_retries": 0,
-#             "jobname_prefix": "test-run-wait",
-#             "workdir": "gs://bucket/path/workdir",
-#             "name": "TestRunWaitDaemon",
-#             "project": "my-gcp-project",
-#             "location": "us-central1",
-#             "gcloud": str(mock_gcloud_path),
-#             "loglevel": "info",
-#         },
-#         ["cmd"],
-#     )
-#     with (
-#         # patch("pipen_cli_gbatch.AnyPath", MockAnyPath),
-#         # patch("pipen_cli_gbatch.isinstance", mock_isinstance),
-#         patch(
-#             "xqute.schedulers.gbatch_scheduler.GbatchScheduler",
-#             MockXquteGbatchScheduler,
-#         )
-#     ):
-#         await daemon._run_wait()
-
-#     assert "cmd: command not found" in caplog.text
-
 
 async def test_get_xqute():
     daemon = CliGbatchDaemonPipeline(
@@ -559,3 +488,320 @@ async def test_show_versions(caplog):
 
     assert f"pipen-cli-gbatch version: v{gbatch_version}" in caplog.text
     assert f"pipen version: v{pipen_version}" in caplog.text
+
+
+async def test_run_wait_not_running(tmp_path):
+    daemon = CliGbatchDaemonPlain({}, ["cmd"])
+    job = MagicMock()
+    xqute = MagicMock()
+    xqute.scheduler.workdir = PanPath(tmp_path)
+    xqute.scheduler.location = "us-central1"
+    xqute.scheduler.create_job = AsyncMock(return_value=job)
+    xqute.scheduler.job_is_running = AsyncMock(return_value=False)
+    xqute.feed = AsyncMock()
+    xqute.run_until_complete = AsyncMock()
+    with patch.object(daemon, "_get_xqute", AsyncMock(return_value=xqute)):
+        await daemon._run_wait()
+    xqute.scheduler.create_job.assert_awaited_once_with(0, ["cmd"], envs={})
+    xqute.feed.assert_awaited_once_with(["cmd"], envs={})
+    xqute.run_until_complete.assert_awaited_once()
+
+
+async def test_run_wait_job_is_running(tmp_path):
+    daemon = CliGbatchDaemonPlain({}, ["cmd"])
+    job = MagicMock()
+    xqute = MagicMock()
+    xqute.scheduler.workdir = PanPath(tmp_path)
+    xqute.scheduler.location = "us-central1"
+    xqute.scheduler.create_job = AsyncMock(return_value=job)
+    xqute.scheduler.job_is_running = AsyncMock(return_value=True)
+    xqute.feed = AsyncMock()
+    xqute.run_until_complete = AsyncMock()
+    with (
+        patch.object(daemon, "_get_xqute", AsyncMock(return_value=xqute)),
+        patch.object(daemon, "_run_nowait", new_callable=AsyncMock) as m_run_nowait,
+    ):
+        await daemon._run_wait()
+    xqute.scheduler.create_job.assert_awaited_once_with(0, ["cmd"], envs={})
+    xqute.feed.assert_not_awaited()
+    xqute.run_until_complete.assert_not_awaited()
+    m_run_nowait.assert_awaited_once_with(xqute)
+
+
+async def test_run_nowait_jid_refetch(tmp_path, caplog):
+    daemon = CliGbatchDaemonPlain({"name": "MyName"}, ["cmd"])
+    job = MagicMock()
+    job.get_jid = AsyncMock(side_effect=[None, "jid-123"])
+    xqute = MagicMock()
+    xqute.scheduler.workdir = PanPath(tmp_path)
+    xqute.scheduler.location = "us-central1"
+    xqute.scheduler.create_job = AsyncMock(return_value=job)
+    xqute.scheduler.job_is_running = AsyncMock(return_value=False)
+    xqute.scheduler.submit_job_and_update_status = AsyncMock()
+    xqute.plugin_context = MagicMock()
+    with patch.object(daemon, "_get_xqute", AsyncMock(return_value=xqute)):
+        await daemon._run_nowait()
+    assert job.get_jid.await_count == 2
+    assert "Job is running in a detached mode: jid-123" in caplog.text
+    xqute.plugin_context.__exit__.assert_called_once()
+
+
+async def test_run_view_logs_workdir_not_found(tmp_path):
+    daemon = CliGbatchDaemonPlain(
+        {"workdir": str(tmp_path), "name": "MyName", "view_logs": "stdout"},
+        ["cmd"],
+    )
+    with pytest.raises(ValueError):
+        await daemon._run_view_logs()
+
+
+async def test_run_view_logs_stdout(tmp_path, capsys):
+    (tmp_path / "MyName" / "0").mkdir(parents=True)
+    (tmp_path / "MyName" / "0" / "job.stdout").write_text("out-line\n")
+    daemon = CliGbatchDaemonPlain(
+        {"workdir": str(tmp_path), "name": "MyName", "view_logs": "stdout"},
+        ["cmd"],
+    )
+    with patch("asyncio.sleep", side_effect=KeyboardInterrupt):
+        with pytest.raises(SystemExit):
+            await daemon._run_view_logs()
+    out = capsys.readouterr().out
+    assert "out-line" in out
+    assert "/STDOUT" not in out
+
+
+async def test_run_view_logs_stderr(tmp_path, capsys):
+    (tmp_path / "MyName" / "0").mkdir(parents=True)
+    (tmp_path / "MyName" / "0" / "job.stderr").write_text("err-line\n")
+    daemon = CliGbatchDaemonPlain(
+        {"workdir": str(tmp_path), "name": "MyName", "view_logs": "stderr"},
+        ["cmd"],
+    )
+    with patch("asyncio.sleep", side_effect=KeyboardInterrupt):
+        with pytest.raises(SystemExit):
+            await daemon._run_view_logs()
+    out = capsys.readouterr().out
+    assert "err-line" in out
+    assert "/STDERR" not in out
+
+
+async def test_run_view_logs_all(tmp_path, capsys):
+    (tmp_path / "MyName" / "0").mkdir(parents=True)
+    (tmp_path / "MyName" / "0" / "job.stdout").write_text("out-line\n")
+    (tmp_path / "MyName" / "0" / "job.stderr").write_text("err-line\n")
+    daemon = CliGbatchDaemonPlain(
+        {"workdir": str(tmp_path), "name": "MyName", "view_logs": "all"},
+        ["cmd"],
+    )
+    with patch("asyncio.sleep", side_effect=KeyboardInterrupt):
+        with pytest.raises(SystemExit):
+            await daemon._run_view_logs()
+    out = capsys.readouterr().out
+    assert "/STDOUT out-line" in out
+    assert "/STDERR err-line" in out
+
+
+async def test_run_view_logs_residue(tmp_path, capsys):
+    # No trailing newline, so the last line is held as residue until Ctrl-C
+    (tmp_path / "MyName" / "0").mkdir(parents=True)
+    (tmp_path / "MyName" / "0" / "job.stdout").write_text("no-newline")
+    daemon = CliGbatchDaemonPlain(
+        {"workdir": str(tmp_path), "name": "MyName", "view_logs": "stdout"},
+        ["cmd"],
+    )
+    with patch("asyncio.sleep", side_effect=KeyboardInterrupt):
+        with pytest.raises(SystemExit):
+            await daemon._run_view_logs()
+    out = capsys.readouterr().out
+    assert "no-newline" in out
+    # residue is bytes; it must be decoded, not shown as b'no-newline'
+    assert "b'no-newline'" not in out
+
+    # with multiple sources, the residue is printed with its source prefix
+    (tmp_path / "MyName" / "0" / "job.stderr").write_text("err-line\n")
+    daemon = CliGbatchDaemonPlain(
+        {"workdir": str(tmp_path), "name": "MyName", "view_logs": "all"},
+        ["cmd"],
+    )
+    with patch("asyncio.sleep", side_effect=KeyboardInterrupt):
+        with pytest.raises(SystemExit):
+            await daemon._run_view_logs()
+    out = capsys.readouterr().out
+    assert "/STDOUT no-newline" in out
+    assert "/STDERR err-line" in out
+
+
+async def test_run_version_exits_early():
+    daemon = CliGbatchDaemonPlain({"version": True}, ["cmd"])
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock) as m_setup,
+        patch.object(daemon, "_show_versions") as m_show_versions,
+        patch.object(daemon, "_show_scheduler_opts") as m_show_opts,
+        patch.object(daemon, "_run_version") as m_run_version,
+        patch.object(daemon, "_run_nowait", new_callable=AsyncMock),
+        patch.object(daemon, "_run_view_logs", new_callable=AsyncMock),
+        patch.object(daemon, "_run_wait", new_callable=AsyncMock),
+    ):
+        await daemon.run()
+    m_run_version.assert_called_once()
+    m_setup.assert_not_awaited()
+    m_show_versions.assert_not_called()
+    m_show_opts.assert_not_called()
+
+    # the same for the pipeline daemon
+    daemon = CliGbatchDaemonPipeline({"version": True}, ["cmd"])
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock) as m_setup,
+        patch.object(daemon, "_run_version") as m_run_version,
+    ):
+        await daemon.run()
+    m_run_version.assert_called_once()
+    m_setup.assert_not_awaited()
+
+
+async def test_run_nowait_dispatch():
+    daemon = CliGbatchDaemonPlain({"nowait": True}, ["cmd"])
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock),
+        patch.object(daemon, "_show_versions"),
+        patch.object(daemon, "_show_scheduler_opts"),
+        patch.object(daemon, "_run_nowait", new_callable=AsyncMock) as m_run_nowait,
+        patch.object(daemon, "_run_view_logs", new_callable=AsyncMock) as m_view_logs,
+        patch.object(daemon, "_run_wait", new_callable=AsyncMock) as m_run_wait,
+    ):
+        await daemon.run()
+    m_run_nowait.assert_awaited_once_with()
+    m_view_logs.assert_not_awaited()
+    m_run_wait.assert_not_awaited()
+
+
+async def test_run_view_logs_dispatch():
+    daemon = CliGbatchDaemonPlain({"view_logs": "all"}, ["cmd"])
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock),
+        patch.object(daemon, "_show_versions"),
+        patch.object(daemon, "_show_scheduler_opts"),
+        patch.object(daemon, "_run_nowait", new_callable=AsyncMock) as m_run_nowait,
+        patch.object(daemon, "_run_view_logs", new_callable=AsyncMock) as m_view_logs,
+        patch.object(daemon, "_run_wait", new_callable=AsyncMock) as m_run_wait,
+    ):
+        await daemon.run()
+    m_view_logs.assert_awaited_once_with()
+    m_run_nowait.assert_not_awaited()
+    m_run_wait.assert_not_awaited()
+
+
+async def test_run_wait_dispatch():
+    daemon = CliGbatchDaemonPlain({}, ["cmd"])
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock),
+        patch.object(daemon, "_show_versions"),
+        patch.object(daemon, "_show_scheduler_opts"),
+        patch.object(daemon, "_run_nowait", new_callable=AsyncMock) as m_run_nowait,
+        patch.object(daemon, "_run_view_logs", new_callable=AsyncMock) as m_view_logs,
+        patch.object(daemon, "_run_wait", new_callable=AsyncMock) as m_run_wait,
+    ):
+        await daemon.run()
+    m_run_wait.assert_awaited_once_with()
+    m_run_nowait.assert_not_awaited()
+    m_view_logs.assert_not_awaited()
+
+
+async def test_run_pipeline_wait_dispatch():
+    daemon = CliGbatchDaemonPipeline({}, ["cmd"])
+    daemon.config["workdir"] = PanPath("gs://bucket/path/workdir")
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock),
+        patch.object(daemon, "_show_versions"),
+        patch.object(daemon, "_show_scheduler_opts"),
+        patch.object(daemon, "_run_wait", new_callable=AsyncMock) as m_run_wait,
+    ):
+        await daemon.run()
+    m_run_wait.assert_awaited_once()
+    assert (
+        str(m_run_wait.call_args.kwargs["stdout_file"])
+        == "gs://bucket/path/workdir/run-latest.log"
+    )
+
+
+async def test_run_pipeline_nowait_dispatch():
+    daemon = CliGbatchDaemonPipeline({"nowait": True}, ["cmd"])
+    daemon.config["workdir"] = PanPath("gs://bucket/path/workdir")
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock),
+        patch.object(daemon, "_show_versions"),
+        patch.object(daemon, "_show_scheduler_opts"),
+        patch.object(daemon, "_run_nowait", new_callable=AsyncMock) as m_run_nowait,
+    ):
+        await daemon.run()
+    m_run_nowait.assert_awaited_once()
+    assert (
+        str(m_run_nowait.call_args.kwargs["stdout_file"])
+        == "gs://bucket/path/workdir/run-latest.log"
+    )
+
+
+async def test_run_pipeline_view_logs_dispatch():
+    daemon = CliGbatchDaemonPipeline({"view_logs": "all"}, ["cmd"])
+    daemon.config["workdir"] = PanPath("gs://bucket/path/workdir")
+    with (
+        patch.object(daemon, "setup", new_callable=AsyncMock),
+        patch.object(daemon, "_show_versions"),
+        patch.object(daemon, "_show_scheduler_opts"),
+        patch.object(daemon, "_run_view_logs", new_callable=AsyncMock) as m_view_logs,
+    ):
+        await daemon.run()
+    m_view_logs.assert_awaited_once_with()
+
+
+def test_daemon_name_plain_from_config():
+    daemon = CliGbatchDaemonPlain({"name": "MyName"}, ["cmd"])
+    assert daemon.daemon_name == "MyName"
+    assert daemon.config["name"] == "MyName"
+
+
+async def test_handle_workdir_plain_absolute_non_gs(tmp_path):
+    daemon = CliGbatchDaemonPlain({"workdir": str(tmp_path)}, ["cmd"])
+    with pytest.raises(ValueError):
+        await daemon.handle_workdir()
+
+
+async def test_jobname_prefix_plain_truncated():
+    daemon = CliGbatchDaemonPlain({}, ["a" * 40, "b"])
+    prefix = await daemon.jobname_prefix()
+    assert re.fullmatch(r"pipen-g-b-a-t-c-h(?:-a){12}-[0-9a-f]{6}", prefix)
+    assert len(prefix) == 48
+
+
+async def test_jobname_prefix_plain_invalid_chars():
+    daemon = CliGbatchDaemonPlain({"jobname_prefix": "UPPER"}, ["cmd"])
+    with pytest.raises(ValueError):
+        await daemon.jobname_prefix()
+
+
+async def test_jobname_prefix_plain_too_long():
+    # config-provided prefixes are not truncated
+    daemon = CliGbatchDaemonPlain({"jobname_prefix": "a" * 49}, ["cmd"])
+    with pytest.raises(ValueError):
+        await daemon.jobname_prefix()
+
+    # invalid characters in a config-provided prefix also error
+    daemon = CliGbatchDaemonPlain({"jobname_prefix": "UPPER" * 9}, ["cmd"])
+    with pytest.raises(ValueError):
+        await daemon.jobname_prefix()
+
+
+async def test_jobname_prefix_pipeline_invalid():
+    daemon = CliGbatchDaemonPipeline({"jobname_prefix": "UPPER"}, ["cmd"])
+    with pytest.raises(ValueError):
+        await daemon.jobname_prefix()
+
+
+async def test_command_workdir():
+    daemon = CliGbatchDaemonPipeline({"mount_as_cwd": "gs://bucket/cwd"}, ["cmd"])
+    daemon.config["workdir"] = PanPath("relative/workdir")
+    assert str(daemon.command_workdir) == "gs://bucket/cwd/relative/workdir"
+
+    daemon = CliGbatchDaemonPipeline({}, ["cmd"])
+    daemon.config["workdir"] = PanPath("gs://bucket/abs/workdir")
+    assert str(daemon.command_workdir) == "gs://bucket/abs/workdir"
