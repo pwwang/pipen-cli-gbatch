@@ -8,7 +8,8 @@ from unittest.mock import patch
 from panpath import PanPath
 from argx import Namespace
 from pipen_cli_gbatch import (
-    CliGbatchDaemon,
+    CliGbatchDaemonPlain,
+    CliGbatchDaemonPipeline,
     GbatchScheduler,
     Xqute,
     pipen_version,
@@ -19,17 +20,17 @@ from .conftest import MOCK_MOUNTS_DIR
 
 
 def test_init():
-    daemon = CliGbatchDaemon({}, [])
+    daemon = CliGbatchDaemonPipeline({}, [])
     assert daemon is not None
     assert daemon.config == {"postscript": "", "prescript": ""}
     assert daemon.command == []
 
-    daemon = CliGbatchDaemon(Namespace(key="val"), ["cmd", "arg1"])
+    daemon = CliGbatchDaemonPipeline(Namespace(key="val"), ["cmd", "arg1"])
     assert daemon is not None
     assert daemon.config.key == "val"
     assert daemon.command == ["cmd", "arg1"]
 
-    daemon = CliGbatchDaemon({"key": "val", "labels": ["a=1", "b=2"]}, ["cmd", "arg1"])
+    daemon = CliGbatchDaemonPipeline({"key": "val", "labels": ["a=1", "b=2"]}, ["cmd", "arg1"])
     assert daemon is not None
     assert daemon.config.labels == {"a": "1", "b": "2"}
     assert daemon.command == ["cmd", "arg1"]
@@ -37,7 +38,7 @@ def test_init():
 
 async def test_get_arg_from_command(tmp_path):
     tmp_path = PanPath(tmp_path)
-    daemon = CliGbatchDaemon({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
 
     assert await daemon._get_arg_from_command("arg1") == "value1"
     assert await daemon._get_arg_from_command("arg2") == "value2"
@@ -46,17 +47,17 @@ async def test_get_arg_from_command(tmp_path):
 
     configfile = tmp_path / "config.toml"
     await configfile.a_write_text("key = 'value'")
-    daemon = CliGbatchDaemon({}, ["cmd", f"@{configfile}"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", f"@{configfile}"])
     assert await daemon._get_arg_from_command("key") == "value"
 
     nonexist_file = tmp_path / "nonexist.toml"
-    daemon = CliGbatchDaemon({}, ["cmd", f"@{nonexist_file}"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", f"@{nonexist_file}"])
     with pytest.raises(FileNotFoundError):
         await daemon._get_arg_from_command("key")
 
 
 def test_replace_arg_in_command():
-    daemon = CliGbatchDaemon({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", "--arg1", "value1", "--arg2=value2"])
 
     daemon._replace_arg_in_command("arg1", "newvalue1")
     assert daemon.command == ["cmd", "--arg1", "newvalue1", "--arg2=value2"]
@@ -76,34 +77,34 @@ def test_replace_arg_in_command():
 
 
 def test_add_mount():
-    daemon = CliGbatchDaemon({}, ["cmd"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd"])
 
     daemon._add_mount("/src/path", "/dest/path")
     assert "/src/path:/dest/path" in daemon.config.mount
 
 
 # @pytest.mark.forked
-async def test_handle_workdir():
+async def testhandle_workdir():
     # no workdir
-    daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", "--name", "MyJob"])
     # await daemon._infer_name()
     with pytest.raises(ValueError):
-        await daemon._handle_workdir()
+        await daemon.handle_workdir()
 
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {"workdir": "gs://bucket/path/workdir"},
-        ["cmd", "--name", "MyJob"],
+        ["cmd", "--name", "MyJob", "--outdir", "gs://bucket/path/outdir"],
     )
     with patch("pipen_cli_gbatch.isinstance", mock_isinstance):
         # await daemon._infer_name()
-        await daemon._handle_workdir()
+        await daemon.handle_workdir()
     assert str(daemon.config.workdir) == "gs://bucket/path/workdir/MyJob"
     assert "--workdir" in daemon.command
     assert "/mnt/disks/.pipen" in daemon.command
 
 
 async def test_handler_outdir():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {},
         ["cmd", "--outdir", "gs://bucket/path/outdir", "--name", "MyJob"],
     )
@@ -117,35 +118,35 @@ async def test_handler_outdir():
 
 
 async def test_infer_name():
-    daemon = CliGbatchDaemon({"name": "MyDaemon"}, ["cmd"])
+    daemon = CliGbatchDaemonPipeline({"name": "MyDaemon"}, ["cmd"])
     # await daemon._infer_name()
     assert daemon.daemon_name == "MyDaemon"
 
-    daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", "--name", "MyJob"])
     # await daemon._infer_name()
-    assert daemon.daemon_name == ".CliGbatchDaemon"
+    assert daemon.daemon_name == ".GbatchDaemon"
 
-    daemon = CliGbatchDaemon({}, ["cmd"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd"])
     # assuming plain=False
-    assert daemon.daemon_name == ".CliGbatchDaemon"
+    assert daemon.daemon_name == ".GbatchDaemon"
 
 
 async def test_infer_jobname_prefix():
-    daemon = CliGbatchDaemon({"jobname_prefix": "my-prefix"}, ["cmd"])
-    await daemon._infer_jobname_prefix()
-    assert daemon.config.jobname_prefix == "my-prefix"
+    daemon = CliGbatchDaemonPipeline({"jobname_prefix": "my-prefix"}, ["cmd"])
+    jobname_prefix = await daemon.jobname_prefix()
+    assert jobname_prefix == "my-prefix"
 
-    daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
-    await daemon._infer_jobname_prefix()
-    assert daemon.config.jobname_prefix == "myjob-gbatch-daemon"
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", "--name", "MyJob"])
+    jobname_prefix = await daemon.jobname_prefix()
+    assert jobname_prefix == "pipen-gbatch-myjob"
 
-    daemon = CliGbatchDaemon({}, ["cmd", "--name", "MyJob"])
-    await daemon._infer_jobname_prefix()
-    assert daemon.config.jobname_prefix == "myjob-gbatch-daemon"
+    daemon = CliGbatchDaemonPipeline({}, ["cmd", "--name", "MyJob"])
+    jobname_prefix = await daemon.jobname_prefix()
+    assert jobname_prefix == "pipen-gbatch-myjob"
 
 
 def test_run_version(capsys):
-    daemon = CliGbatchDaemon({}, ["cmd"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd"])
     daemon._run_version()
 
     captured = capsys.readouterr()
@@ -154,7 +155,7 @@ def test_run_version(capsys):
 
 
 async def test_show_scheduler_opts(caplog):
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPlain(
         {
             "plain": True,
             "option1": "value1",
@@ -173,7 +174,7 @@ async def test_show_scheduler_opts(caplog):
 
 
 async def test_setup(tmp_path):
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {
             "plain": False,
             "workdir": "gs://bucket/path/workdir",
@@ -188,8 +189,8 @@ async def test_setup(tmp_path):
     with patch("pipen_cli_gbatch.isinstance", mock_isinstance):
         await daemon.setup()
 
-    assert daemon.daemon_name == ".CliGbatchDaemon"
-    assert daemon.config.jobname_prefix == "myjob-gbatch-daemon"
+    assert daemon.daemon_name == ".GbatchDaemon"
+    assert daemon.config.jobname_prefix == "pipen-gbatch-myjob"
     assert str(daemon.config.workdir) == "gs://bucket/path/workdir/MyJob"
     assert daemon.config.mount == [
         'gs://bucket/path/workdir1:/mnt/disks/workdir1',
@@ -226,7 +227,7 @@ async def test_other_opts_to_envs():
             "custom_option7": None,
         }
     )
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         options,
         ["cmd", "--arg1", "value1"],
     )
@@ -241,9 +242,8 @@ async def test_other_opts_to_envs():
 
 
 async def test_setup_plain_no_workdir():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPlain(
         {
-            "plain": True,
             "project": "my-gcp-project",
             "location": "us-central1",
             "gcloud": "/path/to/gcloud",
@@ -252,13 +252,12 @@ async def test_setup_plain_no_workdir():
         ["cmd", "--arg1", "value1"],
     )
 
-    await daemon.setup()
     with pytest.raises(ValueError):
-        await daemon._get_xqute()
+        await daemon.setup()
 
 # Deadlock ...
 # async def test_view_logs(mock_gcloud_path, capsys):
-#     daemon = CliGbatchDaemon(
+#     daemon = CliGbatchDaemonPipeline(
 #         {
 #             "nowait": False,
 #             "view_logs": True,
@@ -299,7 +298,7 @@ async def test_setup_plain_no_workdir():
 
 # Causing deadlock
 # async def test_run_wait(mock_gcloud_path, caplog):
-#     daemon = CliGbatchDaemon(
+#     daemon = CliGbatchDaemonPipeline(
 #         {
 #             "nowait": False,
 #             "view_logs": False,
@@ -329,7 +328,7 @@ async def test_setup_plain_no_workdir():
 
 
 async def test_get_xqute():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {
             "nowait": False,
             "view_logs": False,
@@ -350,17 +349,17 @@ async def test_get_xqute():
 
 
 async def test_run_no_command_error():
-    daemon = CliGbatchDaemon({"nowait": True}, [])
+    daemon = CliGbatchDaemonPipeline({"nowait": True}, [])
     with pytest.raises(ValueError):
         await daemon._run_wait()
 
-    daemon = CliGbatchDaemon({"nowait": False}, [])
+    daemon = CliGbatchDaemonPipeline({"nowait": False}, [])
     with pytest.raises(ValueError):
         await daemon._run_nowait()
 
 
 async def test_run_nowait(mock_gcloud_path, caplog):
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {
             "nowait": True,
             "view_logs": False,
@@ -388,7 +387,7 @@ async def test_run_nowait(mock_gcloud_path, caplog):
 
 
 async def test_run_nowait_is_running(mock_gcloud_path, caplog):
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {
             "nowait": True,
             "view_logs": False,
@@ -419,7 +418,7 @@ async def test_run_nowait_is_running(mock_gcloud_path, caplog):
 
 
 async def test_with_envs(mock_gcloud_path):
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {
             "nowait": False,
             "view_logs": False,
@@ -455,7 +454,7 @@ async def test_with_envs(mock_gcloud_path):
 
 
 async def test_error_mount_as_cwd_and_cwd():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {"mount_as_cwd": "gs://bucket/path", "cwd": "/some/path"},
         ["cmd"],
     )
@@ -464,15 +463,14 @@ async def test_error_mount_as_cwd_and_cwd():
 
 
 async def test_mount_as_cwd():
-    daemon = CliGbatchDaemon(
-        {"mount_as_cwd": "gs://bucket/path", "plain": True},
+    daemon = CliGbatchDaemonPlain(
+        {"mount_as_cwd": "gs://bucket/path"},
         ["cmd", "--arg", "value", "--outdir", "path/to/outdir"],
     )
     await daemon.setup()
     # no following for plain mode
     # await daemon._infer_name()
-    # await daemon._handle_workdir()
-    # await daemon._handle_outdir()
+    # await daemon.handle_workdir()
     assert daemon.mount_as_cwd == "gs://bucket/path"
     assert "--arg" in daemon.command
     assert "value" in daemon.command
@@ -481,7 +479,7 @@ async def test_mount_as_cwd():
 
 
 async def test_mount_as_cwd_with_name():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {
             "mount_as_cwd": "gs://bucket/path",
             "project": "my-gcp-project",
@@ -490,8 +488,7 @@ async def test_mount_as_cwd_with_name():
         ["cmd", "--arg", "value", "--name", "MyJob"],
     )
     # await daemon._infer_name()
-    await daemon._handle_workdir()
-    await daemon._handle_outdir()
+    await daemon.handle_workdir()
     assert daemon.mount_as_cwd == "gs://bucket/path"
     xqute = await daemon._get_xqute()
     assert xqute.scheduler.cwd == "/mnt/disks/.cwd"
@@ -499,7 +496,7 @@ async def test_mount_as_cwd_with_name():
     assert volumes[0]["gcs"]["remotePath"] == "bucket/path"
     assert volumes[0]["mountPath"] == "/mnt/disks/.cwd"
     assert xqute.scheduler.config["labels"]["xqute"] == "true"
-    assert str(xqute.scheduler.workdir) == "gs://bucket/path/.pipen/MyJob/.CliGbatchDaemon"
+    assert str(xqute.scheduler.workdir) == "gs://bucket/path/.pipen/MyJob/.GbatchDaemon"
     assert len(daemon.config.get("mount", [])) == 0
     assert len(volumes) == 1
     assert "--arg" in daemon.command
@@ -509,16 +506,16 @@ async def test_mount_as_cwd_with_name():
 
 
 async def test_absolute_workdir():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {},
         ["cmd", "--arg", "value", "--workdir", "/path/outdir", "--name", "MyJob"],
     )
     with pytest.raises(ValueError):
-        await daemon._handle_workdir()
+        await daemon.handle_workdir()
 
 
 async def test_absolute_outdir():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {},
         ["cmd", "--arg", "value", "--outdir", "/path/outdir", "--name", "MyJob"],
     )
@@ -527,7 +524,7 @@ async def test_absolute_outdir():
 
 
 async def test_relative_outdir_without_mount_as_cwd():
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {},
         ["cmd", "--arg", "value", "--outdir", "relative/outdir", "--name", "MyJob"],
     )
@@ -537,14 +534,13 @@ async def test_relative_outdir_without_mount_as_cwd():
 
 async def test_name_32char_longer():
     long_name = "a" * 40
-    daemon = CliGbatchDaemon(
+    daemon = CliGbatchDaemonPipeline(
         {"mount_as_cwd": "gs://bucket/path"},
         ["cmd", "--arg", "value", "--name", long_name],
     )
     # await daemon._infer_name()
-    await daemon._handle_workdir()
-    await daemon._handle_outdir()
-    await daemon._infer_jobname_prefix()
+    await daemon.handle_workdir()
+    jobname_prefix = await daemon.jobname_prefix()
     assert daemon.mount_as_cwd == "gs://bucket/path"
     assert "mount" not in daemon.config
     assert "--arg" in daemon.command
@@ -552,13 +548,13 @@ async def test_name_32char_longer():
     assert "--outdir" in daemon.command
     # Name should be truncated to 32 chars
     assert re.match(
-        r"aaaaaaaaaaaaaaaaaaaaaaaaa-.{6}-gbatch-daemon",
-        daemon.config.jobname_prefix,
+        r"^pipen-gbatch-aaaaaaaaaaaaaaaaaaaaaaaaaaaa-.{6}$",
+        jobname_prefix,
     )
 
 
 async def test_show_versions(caplog):
-    daemon = CliGbatchDaemon({}, ["cmd"])
+    daemon = CliGbatchDaemonPipeline({}, ["cmd"])
     daemon._show_versions()
 
     assert f"pipen-cli-gbatch version: v{gbatch_version}" in caplog.text

@@ -60,6 +60,7 @@ command will always be executed when the pipeline is run.
 """
 # pyright: reportOptionalOperand=false
 from __future__ import annotations
+from abc import abstractmethod
 from typing import Sequence
 
 import re
@@ -74,6 +75,7 @@ from diot import Diot
 from argx import Namespace
 from panpath import PanPath, GSPath
 from simpleconf import Config, ProfileConfig
+from slugify import slugify
 from rich.logging import RichHandler
 from xqute import Xqute, plugin, defaults as xqute_defaults
 from xqute.utils import logger
@@ -85,7 +87,7 @@ from pipen_poplog import LogsPopulator
 from pipen_args.parser_ import _pre_parse
 
 __version__ = "1.2.0a5"
-__all__ = ("CliGbatchPlugin", "CliGbatchDaemon")
+__all__ = ("CliGbatchPlugin", "CliGbatchDaemonPlain", "CliGbatchDaemonPipeline")
 
 
 def _error_and_exit(msg: str) -> None:
@@ -102,43 +104,20 @@ def _error_and_exit(msg: str) -> None:
     raise ValueError(f"{msg}\n")
 
 
-class CliGbatchDaemon:
-    """A daemon pipeline wrapper for running commands via Google Cloud Batch.
+class CliGbatchDaemonMixin:
+    """A mixin class for the CliGbatchDaemon to provide common functionality.
 
-    This class wraps arbitrary commands as single-process pipen pipelines and executes
-    them using the Google Cloud Batch scheduler. It handles configuration management,
-    path mounting, and provides both synchronous and asynchronous execution modes.
-
-    Attributes:
-        config (Diot): Configuration dictionary containing all daemon settings.
-        command (list[str]): The command to be executed as a list of arguments.
-
-    Example:
-        >>> daemon = CliGbatchDaemon(
-        ...     {"workdir": "gs://my-bucket/workdir", "project": "my-project"},
-        ...     ["python", "script.py", "--input", "data.txt"]
-        ... )
-        >>> await daemon.run()
+    This mixin provides methods for handling workdir and outdir configurations,
+    inferring job name prefixes, and managing command arguments. It is intended
+    to be used in conjunction with the CliGbatchDaemon class.
     """
 
     def __init__(self, config: dict | Namespace, command: list[str]):
-        """Initialize the CliGbatchDaemon.
-
-        Args:
-            config: Configuration dictionary or Namespace containing daemon settings.
-                Must include 'workdir' pointing to a Google Storage bucket path.
-                Other options not recognized by the parser are stored in `_other_opts`.
-            command: List of command arguments to execute.
-        """
-        other_opts: dict = {}
-        if isinstance(config, Namespace):
-            if hasattr(config, "_other_opts"):
-                other_opts = config._other_opts or {}
-                delattr(config, "_other_opts")
-
-            self.config = Diot(vars(config))
-        else:
-            self.config = Diot(config)
+        self.config = (
+            Diot(vars(config))
+            if isinstance(config, Namespace)
+            else Diot(config)
+        )
 
         self.mount_as_cwd = (
             self.config.get("mount_as_cwd") or self.config.get("volume_as_cwd")
@@ -153,55 +132,36 @@ class CliGbatchDaemon:
         self.command = command
         # cache for command arguments
         self._command_args: dict = {}
-        self._command_workdir: PanPath | None = None
         # envs sent to the command, can be used in the future to pass some information
         # to the command without using command line arguments
         self.envs: dict = {}
-        # Convert other_opts to envs, so that the command can access them
-        # as environment variables
-        for key, val in other_opts.items():
-            if key in ("scheduler", "workdir", "outdir"):
-                # scheduler for command should be local in the Gbatch VM
-                # workdir/outdir is handled by the daemon
-                continue
-
-            if isinstance(val, bool):
-                val = f"@bool:{val}"
-            elif isinstance(val, int):
-                val = f"@int:{val}"
-            elif isinstance(val, float):
-                val = f"@float:{val}"
-            elif val is None:
-                val = "@none"
-            elif isinstance(val, (list, tuple)):
-                val = list(val)
-                val = f"@json:{json.dumps(val)}"
-            elif isinstance(val, dict):
-                val = f"@json:{json.dumps(val)}"
-            else:
-                val = str(val)
-
-            self.envs[f"PIPEN_{key}"] = val
 
     @property
+    @abstractmethod
     def daemon_name(self) -> str:
         """Infer the daemon name from configuration or command arguments."""
-        if self.config.get("name"):
-            return self.config["name"]
 
-        self.config["name"] = ".CliGbatchDaemon"
-        return self.config["name"]
+    @abstractmethod
+    async def handle_workdir(self):
+        """Handle workdir configuration and mounting.
 
-    async def command_name(self) -> str:
-        """Get the name of the command to be executed."""
-        cname = await self._get_arg_from_command("name")
-        if not cname:
-            raise ValueError(
-                "A name is required explicitly via --name or configuration file, "
-                "for pipen pipeline to run via `pipen gbatch`."
-            )
+        Validates that workdir is a Google Storage bucket path and sets up
+        the appropriate mount configuration for the container.
 
-        return cname
+        We only need to determine the mounted workdir and replace the --workdir value
+        in the command with the mounted workdir. Since the workdir will be handled
+        and mounted by Xqute.
+        """
+
+    @abstractmethod
+    async def jobname_prefix(self) -> str:
+        """Infer the job name prefix for the Google Cloud Batch scheduler.
+
+        Priority order:
+        1. config.jobname_prefix
+        2. "pipen-gbatch-" prefix + --name from command (lowercased, sanitized,
+            and truncated if necessary)
+        """
 
     async def _get_arg_from_command(self, arg: str) -> str | None:
         """Get the value of the given argument from the command line.
@@ -242,26 +202,6 @@ class CliGbatchDaemon:
         self._command_args[arg] = value
         return value
 
-    def _replace_arg_in_command(self, arg: str, value: Any) -> None:
-        """Replace the value of the given argument in the command line.
-
-        Args:
-            arg: The argument name to replace (without '--' prefix).
-            value: The new value to set for the argument.
-        """
-        cmd_equal = [cmd.startswith(f"--{arg}=") for cmd in self.command]
-        cmd_space = [cmd == f"--{arg}" for cmd in self.command]
-        value = str(value)
-
-        if any(cmd_equal):
-            index = cmd_equal.index(True)
-            self.command[index] = f"--{arg}={value}"
-        elif any(cmd_space) and len(cmd_space) > cmd_space.index(True) + 1:
-            index = cmd_space.index(True)
-            self.command[index + 1] = value
-        else:
-            self.command.extend([f"--{arg}", value])
-
     def _add_mount(self, source: str | GSPath, target: str) -> None:
         """Add a mount point to the configuration.
 
@@ -279,117 +219,7 @@ class CliGbatchDaemon:
 
         self.config["mount"] = mount
 
-    async def _handle_workdir(self):
-        """Handle workdir configuration and mounting.
-
-        Validates that workdir is a Google Storage bucket path and sets up
-        the appropriate mount configuration for the container.
-
-        We only need to determine the mounted workdir and replace the --workdir value
-        in the command with the mounted workdir. Since the workdir will be handled
-        and mounted by Xqute.
-
-        Raises:
-            SystemExit: If workdir is not a valid Google Storage bucket path.
-        """
-        # no pipeline name yet
-        workdir = self._command_workdir = PanPath(
-            self.config.get("workdir", None)
-            or await self._get_arg_from_command("workdir")
-            or xqute_defaults.DEFAULT_WORKDIR_NAME
-        )
-
-        if not workdir.is_absolute() and not self.mount_as_cwd:
-            _error_and_exit(
-                "A Google Storage Bucket path is required for --workdir "
-                "or 'workdir' in configuration file."
-            )
-
-        if workdir.is_absolute() and not isinstance(workdir, GSPath):
-            _error_and_exit(
-                "An existing Google Storage Bucket path is "
-                "required for --workdir or 'workdir' in configuration file."
-            )
-
-        if self.mount_as_cwd:
-            workdir = PanPath(xqute_defaults.DEFAULT_WORKDIR_NAME)
-            self._command_workdir = PanPath(
-                f"{self.mount_as_cwd}/{xqute_defaults.DEFAULT_WORKDIR_NAME}"
-            )
-
-            mounted_workdir = (
-                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/.cwd/"
-                f"{xqute_defaults.DEFAULT_WORKDIR_NAME}"
-            )
-        else:
-            mounted_workdir = (
-                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/"
-                f"{xqute_defaults.DEFAULT_WORKDIR_NAME}"
-            )
-
-        self.config["workdir"] = workdir / (await self.command_name())
-        self._replace_arg_in_command("workdir", mounted_workdir)
-
-    async def _handle_outdir(self):
-        """Handle output directory configuration and mounting.
-
-        We need to determine:
-        1. If we need to mount the outdir
-        2. Replace the --outdir value in the command with the mounted outdir
-        """
-        command_name = await self.command_name()
-        command_outdir = await self._get_arg_from_command("outdir")
-        if not command_outdir:
-            command_outdir = f"{command_name}-output"
-
-        command_outdir = PanPath(command_outdir)
-        if not command_outdir.is_absolute() and not self.mount_as_cwd:
-            _error_and_exit(
-                "A Google Storage Bucket path is required for --outdir "
-                "or 'outdir' in configuration file for the pipen pipeline."
-            )
-
-        if command_outdir.is_absolute() and not isinstance(command_outdir, GSPath):
-            _error_and_exit(
-                "An existing Google Storage Bucket path is "
-                "required for --outdir or 'outdir' in configuration file."
-            )
-
-        if not self.mount_as_cwd:
-            mounted_outdir = (
-                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/"
-                f"{xqute_defaults.DEFAULT_WORKDIR_NAME}-{command_name}-output"
-            )
-            self._add_mount(str(command_outdir), mounted_outdir)
-        else:
-            mounted_outdir = (
-                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/.cwd/{command_outdir}"
-            )
-
-        self._replace_arg_in_command("outdir", mounted_outdir)
-
-    async def _infer_jobname_prefix(self):
-        """Infer the job name prefix for the Google Cloud Batch scheduler.
-
-        Priority order:
-        1. config.jobname_prefix
-        2. --name from command + "-gbatch-daemon" suffix (lowercase)
-        3. Default "pipen-cli-gbatch-daemon"
-        """
-        prefix = self.config.get("jobname_prefix", None)
-        if not prefix:
-            command_name = await self.command_name()
-            # The max length of job name in gbatch is 48 characters
-            command_name = command_name.lower()
-            if len(command_name) > 32:
-                hsh = hashlib.sha1(command_name.encode()).hexdigest()[:6]
-                command_name = f"{command_name[:25]}-{hsh}"
-            command_name = re.sub(r"[^a-z0-9-]", "-", command_name)
-            prefix = f"{command_name}-gbatch-daemon"
-
-        self.config["jobname_prefix"] = prefix
-
-    async def _get_xqute(self) -> Xqute:
+    async def _get_xqute(self, stdout_file: Path | None = None) -> Xqute:
         """Create and configure an Xqute instance for job execution.
 
         Returns:
@@ -401,11 +231,6 @@ class CliGbatchDaemon:
             and not self.config.get("view_logs")
             and "logging" not in plugin.get_all_plugin_names()
         ):
-            stdout_file = None
-            if not self.config.get("plain"):
-                command_name = await self.command_name()
-                stdout_file = self._command_workdir / command_name / "run-latest.log"
-
             plugins.append(XquteCliGbatchPlugin(stdout_file=stdout_file))
 
         return Xqute(
@@ -472,7 +297,23 @@ class CliGbatchDaemon:
 
             logger.info(f"- {key}: {val}")
 
-    async def _run_wait(self):  # pragma: no cover
+    async def setup(self):
+        """Set up logging and configuration for the daemon.
+
+        Configures logging handlers and filters, validates workdir requirements,
+        and initializes daemon name and job name prefix.
+
+        Raises:
+            SystemExit: If workdir is not a valid Google Storage bucket path.
+        """
+        logger.addHandler(RichHandler(show_path=False, show_time=False))
+        # logger.addFilter(DuplicateFilter())
+        logger.setLevel(self.config.get("loglevel", "INFO").upper())
+
+        await self.handle_workdir()
+        self.config["jobname_prefix"] = await self.jobname_prefix()
+
+    async def _run_wait(self, stdout_file: Path | None = None):
         """Run the pipeline and wait for completion.
 
         Raises:
@@ -481,22 +322,20 @@ class CliGbatchDaemon:
         if not self.command:
             _error_and_exit("No command to run is provided.")
 
-        xqute = await self._get_xqute()
+        xqute = await self._get_xqute(stdout_file=stdout_file)
         job = await xqute.scheduler.create_job(0, self.command, envs=self.envs)
         if await xqute.scheduler.job_is_running(job):
             await self._run_nowait(xqute)
             return
 
-        if not self.config.plain:
-            cmd_name = await self.command_name()
-            log_file = PanPath(f"{self._command_workdir}/{cmd_name}/run-latest.log")
-            if await log_file.a_exists():
-                await log_file.a_unlink()
-
         await xqute.feed(self.command, envs=self.envs)
         await xqute.run_until_complete()
 
-    async def _run_nowait(self, xqute: Xqute | None = None):
+    async def _run_nowait(
+        self,
+        xqute: Xqute | None = None,
+        stdout_file: Path | None = None,
+    ):
         """Run the pipeline without waiting for completion.
 
         Submits the job to Google Cloud Batch and prints information about
@@ -509,12 +348,12 @@ class CliGbatchDaemon:
         if not self.command:
             _error_and_exit("No command to run is provided.")
 
-        xqute = xqute or await self._get_xqute()
+        xqute = xqute or await self._get_xqute(stdout_file=stdout_file)
 
         try:
             job = await xqute.scheduler.create_job(0, self.command, envs=self.envs)
             jid = await job.get_jid()
-            if await xqute.scheduler.job_is_running(job):  # pragma: no cover
+            if await xqute.scheduler.job_is_running(job):
                 logger.info(f"Job is already submited or running: {jid}")
                 logger.info("")
                 logger.info("To cancel the job, run:")
@@ -522,7 +361,7 @@ class CliGbatchDaemon:
                     "> gcloud batch jobs cancel "
                     f"--location {xqute.scheduler.location} {jid}"  # type: ignore
                 )
-            else:  # pragma: no cover
+            else:
                 await xqute.scheduler.submit_job_and_update_status(job)
                 if jid is None:
                     jid = await job.get_jid()
@@ -562,10 +401,10 @@ class CliGbatchDaemon:
             logger.info(f"📁 {xqute.scheduler.workdir}/0/")
             logger.info("")
         finally:
-            if xqute.plugin_context:  # pragma: no cover
+            if xqute.plugin_context:
                 xqute.plugin_context.__exit__()
 
-    async def _run_view_logs(self):  # pragma: no cover
+    async def _run_view_logs(self):
         """Pull and display logs from the Google Cloud Batch job.
 
         Continuously monitors and displays stdout/stderr logs based on the
@@ -616,37 +455,7 @@ class CliGbatchDaemon:
             logger.info("Stopped pulling logs.")
             sys.exit(0)
 
-    async def setup(self):
-        """Set up logging and configuration for the daemon.
-
-        Configures logging handlers and filters, validates workdir requirements,
-        and initializes daemon name and job name prefix.
-
-        Raises:
-            SystemExit: If workdir is not a valid Google Storage bucket path.
-        """
-        logger.addHandler(RichHandler(show_path=False, show_time=False))
-        # logger.addFilter(DuplicateFilter())
-        logger.setLevel(self.config.get("loglevel", "INFO").upper())
-
-        if not self.config.get("plain", False):
-            # await self._infer_daemon_name()
-            await self._handle_workdir()
-            await self._handle_outdir()
-            await self._infer_jobname_prefix()
-        else:
-            if not self.config.get("name"):
-                self.config["name"] = "-".join(self.command[:2])
-                self.config["name"] = f"CliGbatchDaemon-{self.config['name']}"
-                logger.warning(
-                    "'pipen gbatch' can't detect a name for creating "
-                    f"a workdir, using '{self.config['name']}' instead."
-                )
-
-            self.config.setdefault("workdir", xqute_defaults.DEFAULT_WORKDIR_NAME)
-            # let xqute handle the checks
-
-    async def run(self):  # pragma: no cover
+    async def run(self):
         """Execute the daemon pipeline based on configuration.
 
         Determines the execution mode based on configuration flags:
@@ -670,7 +479,340 @@ class CliGbatchDaemon:
             await self._run_wait()
 
 
-class XquteCliGbatchPlugin:  # pragma: no cover
+class CliGbatchDaemonPlain(CliGbatchDaemonMixin):
+    """A daemon pipeline wrapper for running plain commands via Google Cloud Batch.
+
+    This class wraps arbitrary commands as single-process pipen pipelines and executes
+    them using the Google Cloud Batch scheduler. It handles configuration management,
+    path mounting, and provides both synchronous and asynchronous execution modes.
+
+    Attributes:
+        config (Diot): Configuration dictionary containing all daemon settings.
+        command (list[str]): The command to be executed as a list of arguments.
+
+    Example:
+        >>> daemon = CliGbatchDaemonPlain(
+        ...     {"workdir": "gs://my-bucket/workdir", "project": "my-project"},
+        ...     ["python", "script.py", "--input", "data.txt"]
+        ... )
+        >>> await daemon.run()
+    """
+
+    @property
+    def daemon_name(self) -> str:
+        """Infer the daemon name from configuration or command arguments."""
+        if self.config.get("name"):
+            return self.config["name"]
+
+        self.config["name"] = f".gbatch-{slugify('-'.join(self.command[:2]))}"
+        return self.config["name"]
+
+    async def handle_workdir(self):
+        """Handle workdir configuration and mounting.
+
+        Validates that workdir is a Google Storage bucket path and sets up
+        the appropriate mount configuration for the container.
+
+        We only need to determine the mounted workdir and replace the --workdir value
+        in the command with the mounted workdir. Since the workdir will be handled
+        and mounted by Xqute.
+
+        Raises:
+            SystemExit: If workdir is not a valid Google Storage bucket path.
+        """
+        # no pipeline name yet
+        workdir = PanPath(
+            self.config.get("workdir")
+            or xqute_defaults.DEFAULT_WORKDIR_NAME
+        )
+
+        if not workdir.is_absolute() and not self.mount_as_cwd:
+            _error_and_exit(
+                "A Google Storage Bucket path is required for --workdir "
+                "or 'workdir' in configuration file."
+            )
+
+        if workdir.is_absolute() and not isinstance(workdir, GSPath):
+            _error_and_exit(
+                "An existing Google Storage Bucket path is "
+                "required for --workdir (pipen gbatch --workdir <gs://bucket/path>)"
+            )
+
+        if self.mount_as_cwd:  # workdir is relative
+            workdir = PanPath(f"{self.mount_as_cwd}/{workdir}")
+
+        # xqute will handle the mounting
+        self.config["workdir"] = workdir
+
+    async def jobname_prefix(self) -> str:
+        """Infer the job name prefix for the Google Cloud Batch scheduler.
+
+        Priority order:
+        1. config.jobname_prefix
+        2. "pipen-gbatch-" prefix + --name from command (lowercased, sanitized,
+            and truncated if necessary)
+        """
+        prefix = self.config.get("jobname_prefix", None)
+
+        if not prefix:
+            prefix = slugify("-".join(self.daemon_name)).lstrip("-")
+            if len(prefix) > 41:
+                hsh = hashlib.sha1(prefix.encode("utf-8")).hexdigest()[:6]
+                prefix = f"pipen-{prefix[:35]}-{hsh}"
+
+        if not re.compile(r"^[a-z0-9-]+$").match(prefix) or len(prefix) > 48:
+            _error_and_exit(
+                "Invalid jobname_prefix: must only contain lowercase letters, "
+                "numbers, and hyphens; must be 48 characters or less."
+            )
+
+        return prefix
+
+
+class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
+    """A daemon pipeline wrapper for running plain commands via Google Cloud Batch.
+
+    This class wraps arbitrary commands as single-process pipen pipelines and executes
+    them using the Google Cloud Batch scheduler. It handles configuration management,
+    path mounting, and provides both synchronous and asynchronous execution modes.
+
+    Attributes:
+        config (Diot): Configuration dictionary containing all daemon settings.
+        command (list[str]): The command to be executed as a list of arguments.
+
+    Example:
+        >>> daemon = CliGbatchDaemonPipeline(
+        ...     {"workdir": "gs://my-bucket/workdir", "project": "my-project"},
+        ...     ["python", "script.py", "--input", "data.txt"]
+        ... )
+        >>> await daemon.run()
+    """
+
+    def __init__(self, config: dict | Namespace, command: list[str]):
+        """Initialize the CliGbatchDaemonPipeline.
+
+        Args:
+            config: Configuration dictionary or Namespace containing daemon settings.
+                Must include 'workdir' pointing to a Google Storage bucket path.
+                Other options not recognized by the parser are stored in `_other_opts`.
+            command: List of command arguments to execute.
+        """
+        other_opts: dict = {}
+        if isinstance(config, Namespace) and hasattr(config, "_other_opts"):
+            other_opts = config._other_opts or {}
+            delattr(config, "_other_opts")
+
+        super().__init__(config, command)
+
+        # Convert other_opts to envs, so that the command can access them
+        # as environment variables
+        for key, val in other_opts.items():
+            if key in ("scheduler", "workdir", "outdir"):
+                # scheduler for command should be local in the Gbatch VM
+                # workdir/outdir is handled by the daemon
+                continue
+
+            if isinstance(val, bool):
+                val = f"@bool:{val}"
+            elif isinstance(val, int):
+                val = f"@int:{val}"
+            elif isinstance(val, float):
+                val = f"@float:{val}"
+            elif val is None:
+                val = "@none"
+            elif isinstance(val, (list, tuple)):
+                val = list(val)
+                val = f"@json:{json.dumps(val)}"
+            elif isinstance(val, dict):
+                val = f"@json:{json.dumps(val)}"
+            else:
+                val = str(val)
+
+            self.envs[f"PIPEN_{key}"] = val
+
+    def _replace_arg_in_command(self, arg: str, value: Any) -> None:
+        """Replace the value of the given argument in the command line.
+
+        Args:
+            arg: The argument name to replace (without '--' prefix).
+            value: The new value to set for the argument.
+        """
+        cmd_equal = [cmd.startswith(f"--{arg}=") for cmd in self.command]
+        cmd_space = [cmd == f"--{arg}" for cmd in self.command]
+        value = str(value)
+
+        if any(cmd_equal):
+            index = cmd_equal.index(True)
+            self.command[index] = f"--{arg}={value}"
+        elif any(cmd_space) and len(cmd_space) > cmd_space.index(True) + 1:
+            index = cmd_space.index(True)
+            self.command[index + 1] = value
+        else:
+            self.command.extend([f"--{arg}", value])
+
+    @property
+    def daemon_name(self) -> str:
+        """Infer the daemon name from configuration or command arguments."""
+        if self.config.get("name"):
+            return self.config["name"]
+
+        self.config["name"] = ".GbatchDaemon"
+        return self.config["name"]
+
+    @property
+    def command_workdir(self) -> PanPath:
+        """Get the workdir for the command"""
+        if not self.config["workdir"].is_absolute():
+            return PanPath(self.mount_as_cwd) / self.config["workdir"]
+        return self.config["workdir"]
+
+    async def command_name(self) -> str:
+        """Get the name of the command to be executed."""
+        cname = await self._get_arg_from_command("name")
+        if not cname:
+            raise ValueError(
+                "A name is required explicitly via --name or configuration file, "
+                "for pipen pipeline to run via `pipen gbatch`."
+            )
+
+        return cname
+
+    async def handle_workdir(self):
+        """Handle workdir configuration and mounting.
+
+        Validates that workdir is a Google Storage bucket path and sets up
+        the appropriate mount configuration for the container.
+
+        We only need to determine the mounted workdir and replace the --workdir value
+        in the command with the mounted workdir. Since the workdir will be handled
+        and mounted by Xqute.
+
+        Raises:
+            SystemExit: If workdir is not a valid Google Storage bucket path.
+        """
+        # no pipeline name yet
+        workdir = PanPath(
+            self.config.get("workdir", None)
+            or await self._get_arg_from_command("workdir")
+            or xqute_defaults.DEFAULT_WORKDIR_NAME
+        )
+
+        if not workdir.is_absolute() and not self.mount_as_cwd:
+            _error_and_exit(
+                "A Google Storage Bucket path is required for --workdir "
+                "or 'workdir' in configuration file."
+            )
+
+        if workdir.is_absolute() and not isinstance(workdir, GSPath):
+            _error_and_exit(
+                "An existing Google Storage Bucket path is "
+                "required for --workdir or 'workdir' in configuration file."
+            )
+
+        if self.mount_as_cwd:  # workdir is relative
+            mounted_workdir = f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/.cwd/{workdir}"
+        else:
+            mounted_workdir = (
+                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/"
+                f"{xqute_defaults.DEFAULT_WORKDIR_NAME}"
+            )
+
+        self.config["workdir"] = workdir / (await self.command_name())
+        self._replace_arg_in_command("workdir", mounted_workdir)
+
+        await self._handle_outdir()
+
+    async def _handle_outdir(self):
+        """Handle output directory configuration and mounting.
+
+        We need to determine:
+        1. If we need to mount the outdir
+        2. Replace the --outdir value in the command with the mounted outdir
+        """
+        command_name = await self.command_name()
+        command_outdir = await self._get_arg_from_command("outdir")
+        if not command_outdir:
+            command_outdir = f"{command_name}-output"
+
+        command_outdir = PanPath(command_outdir)
+        if not command_outdir.is_absolute() and not self.mount_as_cwd:
+            _error_and_exit(
+                "A Google Storage Bucket path is required for --outdir "
+                "or 'outdir' in configuration file for the pipen pipeline."
+            )
+
+        if command_outdir.is_absolute() and not isinstance(command_outdir, GSPath):
+            _error_and_exit(
+                "An existing Google Storage Bucket path is "
+                "required for --outdir or 'outdir' in configuration file."
+            )
+
+        if not self.mount_as_cwd:
+            mounted_outdir = (
+                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/"
+                f"{xqute_defaults.DEFAULT_WORKDIR_NAME}-{command_name}-output"
+            )
+            self._add_mount(str(command_outdir), mounted_outdir)
+        else:
+            mounted_outdir = (
+                f"{GbatchScheduler.DEFAULT_MOUNTED_ROOT}/.cwd/{command_outdir}"
+            )
+
+        self._replace_arg_in_command("outdir", mounted_outdir)
+
+    async def jobname_prefix(self) -> str:
+        """Infer the job name prefix for the Google Cloud Batch scheduler.
+
+        Priority order:
+        1. config.jobname_prefix
+        2. "pipen-gbatch-" prefix + --name from command (lowercased, sanitized,
+            and truncated if necessary)
+        """
+        prefix = self.config.get("jobname_prefix", None)
+        if not prefix:
+            command_name = await self.command_name()
+            # The max length of job name in gbatch is 48 characters
+            command_name = command_name.lower()
+            if len(command_name) > 34:
+                hsh = hashlib.sha1(command_name.encode()).hexdigest()[:6]
+                command_name = f"{command_name[:28]}-{hsh}"
+            command_name = re.sub(r"[^a-z0-9-]", "-", command_name)
+            prefix = f"pipen-gbatch-{command_name}"
+
+        if not re.compile(r"^[a-z0-9-]+$").match(prefix) or len(prefix) > 48:
+            _error_and_exit(
+                "Invalid jobname_prefix: must only contain lowercase letters, "
+                "numbers, and hyphens; must be 48 characters or less."
+            )
+
+        return prefix
+
+    async def run(self):
+        """Execute the daemon pipeline based on configuration.
+
+        Determines the execution mode based on configuration flags:
+        - version: Print version information
+        - nowait: Run in detached mode
+        - view_logs: Display logs from existing job
+        - default: Run and wait for completion
+        """
+        if self.config.get("version"):
+            self._run_version()
+            return
+
+        await self.setup()
+        stdout_file = self.command_workdir / "run-latest.log"
+        self._show_versions()
+        self._show_scheduler_opts()
+        if self.config.get("nowait"):
+            await self._run_nowait(stdout_file=stdout_file)
+        elif self.config.get("view_logs"):
+            await self._run_view_logs()
+        else:
+            await self._run_wait(stdout_file=stdout_file)
+
+
+class XquteCliGbatchPlugin:
     """Plugin for pulling logs during pipeline execution.
 
     This plugin monitors job execution and continuously pulls stdout/stderr logs
@@ -843,7 +985,7 @@ class XquteCliGbatchPlugin:  # pragma: no cover
             self.stderr_populator = None
 
 
-class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
+class CliGbatchPlugin(AsyncCLIPlugin):
     """Simplify running commands via Google Cloud Batch.
 
     This CLI plugin provides a command-line interface for executing arbitrary
@@ -1005,4 +1147,7 @@ class CliGbatchPlugin(AsyncCLIPlugin):  # pragma: no cover
         Args:
             args: Parsed command-line arguments containing configuration and command.
         """
-        await CliGbatchDaemon(args, args.command).run()
+        if args.plain:
+            await CliGbatchDaemonPlain(args, args.command).run()
+        else:
+            await CliGbatchDaemonPipeline(args, args.command).run()
