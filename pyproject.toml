@@ -18,7 +18,7 @@ dependencies = [
 prerelease = "allow"
 
 [tool.hatch.version]
-path = "pipen_cli_gbatch/__init__.py"
+path = "pipen_cli_gbatch/version.py"
 
 [project.urls]
 Homepage = "https://github.com/pwwang/pipen-cli-gbatch"

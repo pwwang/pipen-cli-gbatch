@@ -7,12 +7,12 @@ import re
 from unittest.mock import AsyncMock, MagicMock, patch
 from panpath import PanPath
 from argx import Namespace
+from xqute import Xqute
+from pipen import __version__ as pipen_version
+from pipen.scheduler import GbatchScheduler
 from pipen_cli_gbatch import (
     CliGbatchDaemonPlain,
     CliGbatchDaemonPipeline,
-    GbatchScheduler,
-    Xqute,
-    pipen_version,
     __version__ as gbatch_version,
 )
 from .mock.mocks import mock_isinstance, MockXquteGbatchScheduler

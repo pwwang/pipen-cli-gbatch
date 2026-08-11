@@ -5,7 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Sequence
 
-from panpath import PanPath
+from panpath import PanPath, GSPath
 from pipen.scheduler import XquteGbatchScheduler
 from xqute.defaults import DEFAULT_WORKDIR_NAME
 from xqute.path import SpecPath
@@ -14,7 +14,6 @@ from xqute.schedulers.gbatch_scheduler import (
     NAMED_MOUNT_RE,
     Scheduler,
 )
-from pipen_cli_gbatch import GSPath
 
 from ..conftest import MOCK_MOUNTS_DIR
 

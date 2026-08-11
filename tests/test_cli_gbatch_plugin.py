@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 from panpath import PanPath
 from argx import Namespace
 from pipen_args.parser_ import _pre_parse
-from pipen_cli_gbatch import CliGbatchPlugin, XquteCliGbatchPlugin
+from pipen_cli_gbatch import CliGbatchPlugin
+from pipen_cli_gbatch.plugins import XquteCliGbatchPlugin
 
 
 def make_plugin_with_logfiles(tmp_path, stdout_text=None, stderr_text=None):
@@ -284,7 +285,7 @@ async def test_parse_args_profile_defaults_merge(tmp_path):
         mount=["a:b"],
         location="europe-west1",
     )
-    with patch("pipen_cli_gbatch.CONFIG_FILES", [str(conf_file)]):
+    with patch("pipen_cli_gbatch.plugins.CONFIG_FILES", [str(conf_file)]):
         parsed = await plugin.parse_args(ns, [])
     # a single (non-list) mount from config is wrapped and extended
     # with the command line one
@@ -330,7 +331,7 @@ async def test_parse_args_no_profile_no_defaults(tmp_path):
     conf_file = tmp_path / "nonexist.toml"
     plugin = CliGbatchPlugin(MagicMock(), MagicMock())
     ns = Namespace(profile=None, command=["--", "cmd"])
-    with patch("pipen_cli_gbatch.CONFIG_FILES", [str(conf_file)]):
+    with patch("pipen_cli_gbatch.plugins.CONFIG_FILES", [str(conf_file)]):
         parsed = await plugin.parse_args(ns, [])
     assert parsed.command == ["cmd"]
     assert parsed._other_opts == {}
