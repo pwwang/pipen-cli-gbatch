@@ -447,7 +447,7 @@ async def test_error_cwd_notfound_pipeline():
     )
     await daemon.handle_workdir()
     with pytest.raises(ValueError):
-        daemon.command_workdir
+        await daemon.command_workdir()
 
 
 async def test_mount_as_cwd():
@@ -860,11 +860,11 @@ async def test_jobname_prefix_pipeline_invalid():
 async def test_command_workdir():
     daemon = CliGbatchDaemonPipeline({"mount_as_cwd": "gs://bucket/cwd"}, ["cmd"])
     daemon.config["workdir"] = PanPath("relative/workdir")
-    assert str(daemon.command_workdir) == "gs://bucket/cwd/relative/workdir"
+    assert str(await daemon.command_workdir()) == "gs://bucket/cwd/relative/workdir"
 
     daemon = CliGbatchDaemonPipeline({}, ["cmd"])
     daemon.config["workdir"] = PanPath("gs://bucket/abs/workdir")
-    assert str(daemon.command_workdir) == "gs://bucket/abs/workdir"
+    assert str(await daemon.command_workdir()) == "gs://bucket/abs/workdir"
 
 
 async def test_command_workdir_cwd():
@@ -873,7 +873,7 @@ async def test_command_workdir_cwd():
         ["cmd"],
     )
     daemon.config["workdir"] = PanPath("relative/workdir")
-    assert str(daemon.command_workdir) == "gs://bucket/cwd/workdir/relative/workdir"
+    assert str(await daemon.command_workdir()) == "gs://bucket/cwd/workdir/relative/workdir"
 
 
 async def test_plain_workdir_cwd():
@@ -882,7 +882,7 @@ async def test_plain_workdir_cwd():
         ["cmd"],
     )
     await daemon.handle_workdir()
-    assert str(daemon.config.workdir) == "workdir/.pipen"
+    assert str(daemon.config.workdir) == ".pipen"
 
 
 async def test_plain_workdir_cwd_not_found():
@@ -903,5 +903,5 @@ async def test_command_outdir_cwd():
         ["cmd", "--name", "MyJob"],
     )
     await daemon.handle_workdir()
-    assert str(daemon.command_workdir) == "gs://bucket/cwd/workdir/.pipen/MyJob"
+    assert str(await daemon.command_workdir()) == "gs://bucket/cwd/workdir/.pipen/MyJob"
     assert "/mnt/disks/root/workdir/MyJob-output" in daemon.command

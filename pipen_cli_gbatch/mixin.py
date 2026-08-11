@@ -11,7 +11,7 @@ from simpleconf import Config
 from panpath import LocalPath, PanPath, GSPath
 from rich.logging import RichHandler
 from xqute import Xqute, plugin
-from xqute.utils import logger
+from xqute.utils import logger, sanitize_mounts
 from pipen import __version__ as pipen_version
 from pipen_poplog import LogsPopulator
 
@@ -32,10 +32,11 @@ def error_and_exit(msg: str) -> None:
     raise ValueError(f"{msg}\n")
 
 
-def mounted_to_cloud(
+async def mounted_to_cloud(
     mounted: LocalPath,
-    mounts: str | list[str] | None,
-) -> tuple[GSPath | None, str | None, str | None]:
+    mounted_root: str,
+    mounts: str | list[str] | None,  # type: ignore
+) -> PanPath | None:
     """Convert a mounted local path to a Google Storage path based on mounts.
 
     Args:
@@ -46,21 +47,16 @@ def mounted_to_cloud(
     Returns:
         The corresponding Google Storage path if found, None otherwise.
     """
-    mounts = mounts or []
-    if isinstance(mounts, str):
-        mounts = [mounts]
+    mounts: list[tuple[PanPath, Path]] = (
+        await sanitize_mounts(mounts, mounted_root)
+    )[0]
 
-    for mount in mounts:
-        if ":" in mount:
-            source, target = mount.rpartition(":")[::2]
-            if mounted.is_relative_to(target):
-                return (
-                    PanPath(source) / mounted.relative_to(target),   # type: ignore
-                    source,
-                    target,
-                )
+    for host, mount in mounts:
+        if mounted.is_relative_to(mount):
+            rel = mounted.relative_to(mount)
+            return PanPath(host) / rel
 
-    return None, None, None
+    return None
 
 
 class CliGbatchDaemonMixin:
@@ -275,6 +271,8 @@ class CliGbatchDaemonMixin:
 
             logger.info(f"- {key}: {val}")
 
+        logger.info(f"Daemon workdir: {self.config.get('workdir')}/{self.daemon_name}")
+
     async def setup(self):
         """Set up logging and configuration for the daemon.
 
@@ -448,6 +446,7 @@ class CliGbatchDaemonMixin:
 
         await self.setup()
         self._show_versions()
+        logger.info("Running in PLAIN mode")
         self._show_scheduler_opts()
         if self.config.get("nowait"):
             await self._run_nowait()

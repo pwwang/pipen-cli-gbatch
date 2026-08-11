@@ -7,7 +7,7 @@ import hashlib
 import json
 from argparse import Namespace
 from slugify import slugify
-from panpath import PanPath, GSPath, LocalPath
+from panpath import PanPath, GSPath
 from pipen.scheduler import GbatchScheduler
 from xqute import defaults as xqute_defaults
 from xqute.utils import logger
@@ -83,8 +83,9 @@ class CliGbatchDaemonPlain(CliGbatchDaemonMixin):
                 # cwd=/mnt/path/workdir
                 # cloud_cwd=gs://bucket/path/workdir
                 # workdir=.pipen
-                cloud_cwd, _, target = mounted_to_cloud(
+                cloud_cwd = await mounted_to_cloud(
                     self.cwd,   # type: ignore
+                    GbatchScheduler.DEFAULT_MOUNTED_ROOT,
                     self.config.get("mount", self.config.get("volumes", []))
                 )
                 if not cloud_cwd:
@@ -95,9 +96,7 @@ class CliGbatchDaemonPlain(CliGbatchDaemonMixin):
                         "or 'workdir' in configuration file for `pipen gbatch`."
                     )
 
-                rel = self.cwd.relative_to(target)  # type: ignore
-                # Keep workdir relative so xqute won't re-mount it
-                workdir = rel / workdir
+                # keep workdir as-is, and xqute will solve it.
 
         # xqute will handle the mounting
         self.config["workdir"] = workdir
@@ -217,8 +216,7 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
         self.config["name"] = ".GbatchDaemon"
         return self.config["name"]
 
-    @property
-    def command_workdir(self) -> PanPath:
+    async def command_workdir(self) -> PanPath:
         """Get the workdir for the command"""
         if not self.config["workdir"].is_absolute():
             if self.mount_as_cwd:
@@ -226,8 +224,9 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
             elif self.cwd:
                 # We need to get the cloud path, instead of the path in VM
                 # The only way is to parse the mounts
-                cloud_cwd, _, _ = mounted_to_cloud(
+                cloud_cwd = await mounted_to_cloud(
                     self.cwd,   # type: ignore
+                    GbatchScheduler.DEFAULT_MOUNTED_ROOT,
                     self.config.get("mount", self.config.get("volumes", []))
                 )
                 if not cloud_cwd:
@@ -383,10 +382,11 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
             return
 
         await self.setup()
-        stdout_file = self.command_workdir / "run-latest.log"
+        command_workdir = await self.command_workdir()
+        stdout_file = command_workdir / "run-latest.log"
         self._show_versions()
+        logger.info("Running in PIPELINE mode")
         self._show_scheduler_opts()
-        logger.info(f"Daemon workdir: {self.config.get('workdir')}/{self.daemon_name}")
         if self.config.get("nowait"):
             await self._run_nowait(stdout_file=stdout_file)
         elif self.config.get("view_logs"):
