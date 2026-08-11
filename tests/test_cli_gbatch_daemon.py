@@ -374,6 +374,7 @@ async def test_with_envs(mock_gcloud_path):
         await daemon._run_nowait()
 
     xqute = await daemon._get_xqute()
+    await xqute.scheduler.post_init()
     workdir = MOCK_MOUNTS_DIR / str(xqute.scheduler.workdir)[5:]
     wrapped_file = workdir / "0" / "job.wrapped.gbatch"
     assert wrapped_file.exists()
@@ -478,6 +479,7 @@ async def test_mount_as_cwd_with_name():
     await daemon.handle_workdir()
     assert str(daemon.mount_as_cwd) == "gs://bucket/path"
     xqute = await daemon._get_xqute()
+    await xqute.scheduler.post_init()
     assert xqute.scheduler.cwd == "/mnt/disks/.cwd"
     volumes = xqute.scheduler.config["taskGroups"][0]["taskSpec"]["volumes"]
     assert volumes[0]["gcs"]["remotePath"] == "bucket/path"
