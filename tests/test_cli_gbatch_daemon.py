@@ -382,13 +382,32 @@ async def test_with_envs(mock_gcloud_path):
     assert "export ENV_VAR2=value2" in content
 
 
-async def test_error_mount_as_cwd_and_cwd():
+async def test_pipeline_no_name():
     daemon = CliGbatchDaemonPipeline(
-        {"mount_as_cwd": "gs://bucket/path", "cwd": "/some/path"},
+        {
+            "mount_as_cwd": "gs://bucket/path",
+            "project": "my-gcp-project",
+            "location": "us-central1",
+        },
         ["cmd"],
     )
     with pytest.raises(ValueError):
         await daemon.setup()
+
+
+async def test_error_mount_as_cwd_and_cwd():
+    daemon = CliGbatchDaemonPlain(
+        {
+            "mount_as_cwd": "gs://bucket/path",
+            "cwd": "/some/path",
+            "project": "my-gcp-project",
+            "location": "us-central1",
+        },
+        ["cmd"],
+    )
+    await daemon.setup()
+    with pytest.raises(ValueError):
+        await daemon._get_xqute()
 
 
 async def test_mount_as_cwd():
