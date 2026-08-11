@@ -8,7 +8,7 @@ from pathlib import Path
 
 from diot import Diot
 from simpleconf import Config
-from panpath import PanPath, GSPath
+from panpath import LocalPath, PanPath, GSPath
 from rich.logging import RichHandler
 from xqute import Xqute, plugin
 from xqute.utils import logger
@@ -32,6 +32,37 @@ def error_and_exit(msg: str) -> None:
     raise ValueError(f"{msg}\n")
 
 
+def mounted_to_cloud(
+    mounted: LocalPath,
+    mounts: str | list[str] | None,
+) -> tuple[GSPath | None, str | None, str | None]:
+    """Convert a mounted local path to a Google Storage path based on mounts.
+
+    Args:
+        mounted: The local path that is mounted.
+        mounts: A single mount string or a list of mount strings in the format
+            "source:target".
+
+    Returns:
+        The corresponding Google Storage path if found, None otherwise.
+    """
+    mounts = mounts or []
+    if isinstance(mounts, str):
+        mounts = [mounts]
+
+    for mount in mounts:
+        if ":" in mount:
+            source, target = mount.rpartition(":")[::2]
+            if mounted.is_relative_to(target):
+                return (
+                    PanPath(source) / mounted.relative_to(target),   # type: ignore
+                    source,
+                    target,
+                )
+
+    return None, None, None
+
+
 class CliGbatchDaemonMixin:
     """A mixin class for the CliGbatchDaemon to provide common functionality.
 
@@ -52,6 +83,21 @@ class CliGbatchDaemonMixin:
         )
         if self.mount_as_cwd:
             self.mount_as_cwd = PanPath(self.mount_as_cwd)
+
+        self.cwd = self.config.get("cwd", None)
+        if self.cwd:
+            if self.mount_as_cwd:
+                error_and_exit(
+                    "The 'cwd' option cannot be used when 'mount_as_cwd' is set "
+                    "for `pipen gbatch`."
+                )
+
+            self.cwd = PanPath(self.cwd)
+            if not isinstance(self.cwd, LocalPath):
+                error_and_exit(
+                    "The 'cwd' option must be a local path from inside the VM, "
+                    "not a Google Storage path for `pipen gbatch`."
+                )
 
         self.config.prescript = self.config.get("prescript", None) or ""
         self.config.postscript = self.config.get("postscript", None) or ""

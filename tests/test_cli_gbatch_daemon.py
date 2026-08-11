@@ -396,18 +396,16 @@ async def test_pipeline_no_name():
 
 
 async def test_error_mount_as_cwd_and_cwd():
-    daemon = CliGbatchDaemonPlain(
-        {
-            "mount_as_cwd": "gs://bucket/path",
-            "cwd": "/some/path",
-            "project": "my-gcp-project",
-            "location": "us-central1",
-        },
-        ["cmd"],
-    )
-    await daemon.setup()
     with pytest.raises(ValueError):
-        await daemon._get_xqute()
+        CliGbatchDaemonPlain(
+            {
+                "mount_as_cwd": "gs://bucket/path",
+                "cwd": "/some/path",
+                "project": "my-gcp-project",
+                "location": "us-central1",
+            },
+            ["cmd"],
+        )
 
 
 async def test_error_mount_as_cwd_and_cwd_pipeline():
@@ -874,6 +872,24 @@ async def test_command_workdir_cwd():
     )
     daemon.config["workdir"] = PanPath("relative/workdir")
     assert str(daemon.command_workdir) == "gs://bucket/cwd/workdir/relative/workdir"
+
+
+async def test_plain_workdir_cwd():
+    daemon = CliGbatchDaemonPlain(
+        {"mount": "gs://bucket/cwd:/mnt/disks/root", "cwd": "/mnt/disks/root/workdir"},
+        ["cmd"],
+    )
+    await daemon.handle_workdir()
+    assert str(daemon.config.workdir) == "workdir/.pipen"
+
+
+async def test_plain_workdir_cwd_not_found():
+    daemon = CliGbatchDaemonPlain(
+        {"mount": "gs://bucket/cwd:/mnt/disks/root", "cwd": "/tmp/notfound"},
+        ["cmd"],
+    )
+    with pytest.raises(ValueError):
+        await daemon.handle_workdir()
 
 
 async def test_command_outdir_cwd():
