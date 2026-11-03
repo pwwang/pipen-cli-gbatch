@@ -243,6 +243,9 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
 
     async def command_name(self) -> str:
         """Get the name of the command to be executed."""
+        if self.config.get("view_logs"):
+            return ""
+
         cname = await self._get_arg_from_command("name")
         if not cname:
             raise ValueError(
@@ -308,6 +311,9 @@ class CliGbatchDaemonPipeline(CliGbatchDaemonMixin):
         1. If we need to mount the outdir
         2. Replace the --outdir value in the command with the mounted outdir
         """
+        if self.config.get("view_logs"):
+            return
+
         command_name = await self.command_name()
         command_outdir = await self._get_arg_from_command("outdir")
         if not command_outdir:
